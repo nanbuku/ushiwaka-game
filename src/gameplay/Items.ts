@@ -22,7 +22,8 @@ export type ItemId =
   | 'bone'
   | 'crepe'
   | 'cotton'
-  | 'icecream';
+  | 'icecream'
+  | 'bomb';
 
 export type Owner = 'none' | 'shop' | 'shrine' | 'person';
 
@@ -34,7 +35,7 @@ export interface ItemDef {
   /** 悪魔モード時の悪魔度アップ量 */
   devil: number;
   radius: number;
-  category: 'food' | 'flower' | 'toy' | 'loot' | 'sweets';
+  category: 'food' | 'flower' | 'toy' | 'loot' | 'sweets' | 'danger';
 }
 
 export const ITEMS: Record<ItemId, ItemDef> = {
@@ -56,6 +57,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   crepe: { id: 'crepe', name: 'クレープ', happy: 6, devil: 3, radius: 0.06, category: 'sweets' },
   cotton: { id: 'cotton', name: 'わたあめ', happy: 6, devil: 3, radius: 0.08, category: 'sweets' },
   icecream: { id: 'icecream', name: 'ソフトクリーム', happy: 6, devil: 3, radius: 0.06, category: 'sweets' },
+  bomb: { id: 'bomb', name: '爆弾', happy: 0, devil: 10, radius: 0.1, category: 'danger' },
 };
 
 // ---------- 見た目（パーツを1つのジオメトリにまとめ、頂点カラーで塗る） ----------
@@ -194,6 +196,13 @@ function itemGeometry(id: ItemId, variant: number): THREE.BufferGeometry {
         [CY(0.005, 0.2), '#f5f5f5', 0, 0.1, 0],
         [S(0.075, 1, 1.1, 1), '#ffb6d9', 0, 0.24, 0],
       ]);
+    case 'bomb':
+      return build([
+        [S(0.1), '#1d1d22', 0, 0.1, 0],
+        [CY(0.03, 0.04), '#55555c', 0, 0.2, 0],
+        [CY(0.007, 0.07), '#c9a96e', 0.012, 0.25, 0, 0, 0, -0.35],
+        [S(0.022), '#ffffff', -0.045, 0.14, 0.06],
+      ]);
     case 'icecream':
       return build([
         [CO(0.035, 0.11, 10), '#d9a35b', 0, 0.055, 0, Math.PI, 0, 0],
@@ -229,6 +238,8 @@ export class WorldItem {
   body: RAPIER.RigidBody | null = null;
   state: 'world' | 'carried' | 'gone' = 'world';
   stolen = false;
+  /** 爆弾の導火線（秒）。null なら火がついていない */
+  fuse: number | null = null;
   /** 最初に置かれていた場所（なんくの家の花かどうかの判定などに使う） */
   origin = new THREE.Vector3();
   constructor(
@@ -344,6 +355,19 @@ export class ItemSystem {
 
   update(dt: number) {
     const tmpQ = new THREE.Quaternion();
+    // 爆弾の導火線
+    for (const it of [...this.list]) {
+      if (it.fuse === null || it.state === 'gone') continue;
+      it.fuse -= dt;
+      const p = it.state === 'carried' ? this.game.player.mouthWorld() : it.obj.position;
+      if (Math.random() < dt * 30) this.game.fx.fuseSpark(p.clone().setY(p.y + 0.27));
+      if (it.fuse <= 0) {
+        const at = p.clone();
+        if (it.state === 'carried') this.game.player.consumeCarried();
+        else this.remove(it);
+        this.game.explode(at, true);
+      }
+    }
     for (const it of this.list) {
       if (it.state !== 'world' || !it.body) continue;
       const t = it.body.translation();

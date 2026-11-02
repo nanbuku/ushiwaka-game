@@ -177,6 +177,91 @@ export class AudioSys {
     }
   }
 
+  // ---------- BGM（その場で作曲して流す） ----------
+  musicMode: 'normal' | 'devil' = 'normal';
+  private musicGain: GainNode | null = null;
+  private musicTimer: number | null = null;
+  private nextNoteT = 0;
+  private stepN = 0;
+
+  startMusic() {
+    const ctx = this.ctx;
+    if (!ctx || this.musicTimer !== null) return;
+    if (!this.musicGain) {
+      this.musicGain = ctx.createGain();
+      this.musicGain.gain.value = 0.09;
+      this.musicGain.connect(this.master);
+    }
+    this.nextNoteT = ctx.currentTime + 0.2;
+    this.musicTimer = window.setInterval(() => this.scheduleMusic(), 90);
+  }
+
+  stopMusic() {
+    if (this.musicTimer !== null) window.clearInterval(this.musicTimer);
+    this.musicTimer = null;
+  }
+
+  toggleMusic() {
+    if (this.musicTimer !== null) {
+      this.stopMusic();
+      return false;
+    }
+    this.startMusic();
+    return true;
+  }
+
+  private scheduleMusic() {
+    const ctx = this.ctx;
+    if (!ctx || !this.musicGain) return;
+    const devil = this.musicMode === 'devil';
+    const eighth = 60 / (devil ? 78 : 94) / 2;
+    while (this.nextNoteT < ctx.currentTime + 0.35) {
+      this.musicStep(this.stepN, this.nextNoteT, devil, eighth);
+      this.nextNoteT += eighth;
+      this.stepN++;
+    }
+  }
+
+  private musicStep(step: number, t: number, devil: boolean, eighth: number) {
+    const ctx = this.ctx!;
+    const dest = this.musicGain!;
+    const prog = devil
+      ? [
+          [57, 60, 64],
+          [53, 57, 60],
+          [50, 53, 57],
+          [52, 56, 59],
+        ]
+      : [
+          [60, 64, 67],
+          [57, 60, 64],
+          [53, 57, 60],
+          [55, 59, 62],
+        ];
+    const bar = Math.floor(step / 8) % 4;
+    const pos = step % 8;
+    const chord = prog[bar];
+    const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
+    const note = (midi: number, dur: number, type: OscillatorType, peak: number) => {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = mtof(midi);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(peak, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(dest);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    };
+    if (pos === 0 || pos === 4) note(chord[0] - 24, eighth * 3.5, 'triangle', 0.5);
+    const arp = [0, 1, 2, 1, 2, 0, 1, 2][pos];
+    const oct = pos >= 4 ? 12 : 0;
+    if (!(devil && pos % 2 === 1)) note(chord[arp] + oct, eighth * 1.8, devil ? 'sawtooth' : 'sine', devil ? 0.12 : 0.3);
+    if (!devil && pos === 6 && bar % 2 === 1) note(chord[2] + 24, eighth * 2, 'sine', 0.12);
+    if (devil && pos === 0) note(chord[0] - 12, eighth * 8, 'sawtooth', 0.08);
+  }
+
   // ---------- エンジン音（運転中ずっと鳴る） ----------
   private engine: { osc: OscillatorNode; osc2: OscillatorNode; gain: GainNode; lp: BiquadFilterNode } | null = null;
   engineOn() {

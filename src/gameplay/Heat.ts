@@ -3,7 +3,7 @@ import type { Game } from '../core/Game';
 import { clamp, rand } from '../core/Rng';
 import type { CrimeKind } from './Karma';
 
-const GAIN: Record<CrimeKind, number> = { faint: 0.25, steal: 0.45, shrine: 0.5, bite: 0.8, kill: 1.6 };
+const GAIN: Record<CrimeKind, number> = { faint: 0.25, steal: 0.45, shrine: 0.5, bite: 0.8, kill: 1.6, bomb: 1.8 };
 
 /**
  * 通報レベル（0〜5）。目撃者がいる悪事で上がり、保健所の職員が追ってくる。

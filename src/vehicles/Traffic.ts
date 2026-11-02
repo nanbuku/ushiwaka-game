@@ -100,7 +100,10 @@ export class Traffic {
 
     for (const v of this.list) {
       if (v.driver === 'player') continue;
-      if (v.ai) this.stepAI(v, dt);
+      if (v.wrecked) {
+        v.updateWreck(dt);
+        v.sync(0);
+      } else if (v.ai) this.stepAI(v, dt);
       else {
         v.speed *= 1 - Math.min(1, dt * 2);
         v.sync(dt);
@@ -229,7 +232,7 @@ export class Traffic {
         if (v === pv) {
           if (sp > 9) {
             n.fling(dir.multiplyScalar(sp * 0.7).add(new THREE.Vector3(rand.range(-2, 2), 5 + sp * 0.25, rand.range(-2, 2))));
-            g.karma.crime('kill', n.pos, n.kind);
+            g.karma.crime('kill', n.pos, n.kind, 1, 'car');
             g.hud.popText(n.headPos(), rand.pick(['ドーン!', 'バーン!', 'ドカッ!']), '#ffd166', 34);
           } else if (n.conscious) {
             n.faint();
@@ -273,7 +276,7 @@ export class Traffic {
     let best: Vehicle | null = null;
     let bd = maxDist;
     for (const v of this.list) {
-      if (v.driver === 'player' || Math.abs(v.speed) > 4) continue;
+      if (v.driver === 'player' || Math.abs(v.speed) > 4 || v.wrecked) continue;
       const d = Math.hypot(v.pos.x - pos.x, v.pos.z - pos.z) - Math.max(v.spec.halfW, 0.6);
       if (d < bd) {
         bd = d;

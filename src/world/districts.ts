@@ -585,6 +585,17 @@ function buildDowntown(w: World, lot: Lot) {
     const cz = (inner.z0 + inner.z1) / 2;
     b.building(cx, cz, lot.y, inner.x1 - inner.x0 - 4, inner.z1 - inner.z0 - 4, 18, '#efe7da', 0, 'shop');
     b.sign('ショッピングモール ワンダフル', cx, lot.y + 15, inner.z1 - 1.95, 0, 20, 2.2, '#ff6f91', '#ffffff', true);
+  } else if (lot.cx0 === 100 && lot.cz0 === 100) {
+    plaza(w, lot, inner);
+    // 花火屋（爆弾が買える…というか盗める）
+    const fx = (inner.x0 + inner.x1) / 2;
+    const fz = inner.z0 + 4;
+    w.b.box('plain', fx, lot.y, fz, 5, 1.0, 2.2, '#3a2a1a');
+    w.b.box('plain', fx, lot.y + 2.6, fz, 5.6, 0.25, 2.8, '#d62828', 0, false);
+    for (const dx of [-2.6, 2.6]) w.b.cyl(fx + dx, lot.y, fz + 1.2, 0.06, 2.6, '#222222', false);
+    w.b.sign('花火・火薬 ドカン堂', fx, lot.y + 3.1, fz + 1.42, 0, 4.6, 0.75, '#d62828', '#ffe066', true);
+    for (let k = 0; k < 4; k++) item(w, 'bomb', fx - 1.8 + k * 1.2, lot.y + 1.0, fz + 0.5, 'shop');
+    w.staticSpots.push({ x: fx + 2.2, y: lot.y, z: fz - 1.6, yaw: 0, kind: 'clerk', district: 'downtown' });
   } else {
     plaza(w, lot, inner);
   }
@@ -684,6 +695,12 @@ function buildRiverside(w: World, lot: Lot) {
     b.cyl(a.x1 - 16, y, a.z0 + 10, 1.0, 22, '#d8d8d8');
     b.flat('ground', cx, y + 0.006, cz + 24, a.x1 - a.x0 - 4, 26, '#8d8f93');
     for (let i = 0; i < 5; i++) b.box('plain', a.x0 + 10 + i * 13, y, cz + 26, 6, 2.6, 2.4, rng.pick(['#3d6b9a', '#a63d3d', '#5c8a3d', '#c99a2e']), 0);
+    if (lot.cx0 === -200) {
+      // 危険物倉庫の前に爆弾の木箱
+      b.box('plain', a.x0 + 12, y, cz + 18, 2.4, 0.8, 1.6, '#8a6a3a');
+      b.sign('危険物', a.x0 + 12, y + 0.5, cz + 18.82, 0, 1.4, 0.35, '#ffd400', '#111111');
+      for (let k = 0; k < 3; k++) item(w, 'bomb', a.x0 + 11.2 + k * 0.8, y + 0.8, cz + 18, 'shop');
+    }
   }
 }
 

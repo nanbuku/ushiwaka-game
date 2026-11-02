@@ -59,6 +59,11 @@ export class Vehicle {
   collider: RAPIER.Collider;
   private cc: RAPIER.KinematicCharacterController;
   private lean = 0;
+  /** 爆発で壊れた */
+  wrecked = false;
+  private wreckV: THREE.Vector3 | null = null;
+  private spinX = 0;
+  private spinZ = 0;
 
   constructor(
     private game: Game,
@@ -166,6 +171,55 @@ export class Vehicle {
     r.position.copy(this.pos);
     r.rotation.y = this.yaw;
     this.model.animate(this.speed, this.steer, dt, this.lean);
+  }
+
+  /** 爆風で吹っ飛ぶ（以後は動かない残骸） */
+  blast(vel: THREE.Vector3) {
+    this.ai = null;
+    this.driver = 'none';
+    this.speed = 0;
+    this.wreckV = vel.clone();
+    this.spinX = (Math.random() - 0.5) * 6;
+    this.spinZ = (Math.random() - 0.5) * 6;
+    if (!this.wrecked) {
+      this.wrecked = true;
+      this.model.root.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh && (m.material as THREE.MeshStandardMaterial).color) {
+          const mat = (m.material as THREE.MeshStandardMaterial).clone();
+          mat.color.multiplyScalar(0.25);
+          if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0;
+          m.material = mat;
+        }
+      });
+    }
+  }
+
+  /** 吹っ飛び中の動き（Traffic から毎フレーム呼ぶ） */
+  updateWreck(dt: number) {
+    if (!this.wreckV) return;
+    const v = this.wreckV;
+    v.y -= 22 * dt;
+    const g = this.game;
+    const gy = g.world.groundHeight(this.pos.x, this.pos.z);
+    let ny = this.pos.y + v.y * dt;
+    this.model.body.rotation.x += this.spinX * dt;
+    this.model.body.rotation.z += this.spinZ * dt;
+    if (ny <= gy && v.y < 0) {
+      ny = gy;
+      if (Math.abs(v.y) > 4) {
+        v.y *= -0.3;
+        v.x *= 0.5;
+        v.z *= 0.5;
+        g.audio.play('crash', this.pos, 0.7);
+      } else {
+        this.wreckV = null;
+        const flip = Math.round(this.model.body.rotation.z / Math.PI) * Math.PI;
+        this.model.body.rotation.z = flip;
+        this.model.body.rotation.x = Math.round(this.model.body.rotation.x / Math.PI) * Math.PI;
+      }
+    }
+    this.place(this.pos.x + v.x * dt, ny, this.pos.z + v.z * dt, this.yaw);
   }
 
   seatWorld(out = new THREE.Vector3()) {

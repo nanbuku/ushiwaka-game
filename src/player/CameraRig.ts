@@ -63,7 +63,7 @@ export class CameraRig {
     const cp = Math.cos(this.pitch);
     this.dir.set(Math.sin(this.yaw) * cp, Math.sin(this.pitch), Math.cos(this.yaw) * cp);
     let d = this.dist;
-    const hit = g.physics.raycast(this.focus, this.dir, d + 0.25, G.STATIC);
+    const hit = g.physics.raycast(this.focus, this.dir, d + 0.25, G.STATIC | G.VEHICLE, p.driving?.collider);
     if (hit) d = Math.max(0.3, hit.dist - 0.22);
     const cam = g.camera;
     cam.position.copy(this.focus).addScaledVector(this.dir, d);

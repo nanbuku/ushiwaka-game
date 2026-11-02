@@ -327,6 +327,11 @@ export class Ushiwaka {
     const v = throwIt ? f.multiplyScalar(7.5).add(new THREE.Vector3(0, 3.5, 0)).add(this.vel.clone().setY(0)) : f.multiplyScalar(0.6);
     g.items.drop(it, p, v);
     g.audio.play('drop', this.pos, 0.5);
+    if (it.def.id === 'bomb' && it.fuse === null) {
+      it.fuse = throwIt ? 2.2 : 3.5;
+      g.audio.play('fuse', this.pos, 0.8);
+      g.hud.popText(this.headWorld(), 'ジジジ…', '#ffb703', 22);
+    }
   }
 
   /** 渡し終えた等で、くわえている物を消す */
@@ -371,7 +376,7 @@ export class Ushiwaka {
     const veh = g.traffic.nearest(this.pos, 1.6);
     if (veh) return `F: ${veh.kind === 'scooter' ? 'スクーター' : veh.kind === 'catcherVan' ? '保健所の車' : '車'}に乗る${veh.driver === 'npc' ? '（運転手を追い出す）' : ''}`;
     if (g.nanku.canTalk(this.pos)) return this.carrying ? `E: なんくに「${this.carrying.def.name}」をわたす` : 'E: なんくと話す';
-    if (this.carrying) return `E: はなす　Q: なげる（${this.carrying.def.name}）`;
+    if (this.carrying) return this.carrying.def.id === 'bomb' ? 'Q: 爆弾を投げる（火がつく！）　E: 置く（3.5秒で爆発）' : `E: はなす　Q: なげる（${this.carrying.def.name}）`;
     const it = g.items.findNear(this.mouthWorld(), this.pos.y, 0.95);
     if (it) return `E / 左クリック: ${it.def.name}をくわえる${it.owner === 'shop' ? '（盗み）' : it.owner === 'shrine' ? '（お供え物）' : ''}`;
     return '';

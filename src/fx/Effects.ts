@@ -143,6 +143,35 @@ export class Effects {
     }
   }
 
+  private fireballs: { mesh: THREE.Mesh; t: number }[] = [];
+
+  fuseSpark(pos: THREE.Vector3) {
+    this.emit(pos.x, pos.y, pos.z, rand.range(-0.6, 0.6), rand.range(0.5, 1.5), rand.range(-0.6, 0.6), rand.pick(['#ffd166', '#ffffff', '#ff9f1c']), 0.018, 0.3, -6, -99, false);
+  }
+
+  explosion(pos: THREE.Vector3, groundY: number) {
+    const mat = new THREE.MeshBasicMaterial({ color: '#ffb347', transparent: true, opacity: 1, depthWrite: false, toneMapped: false });
+    const mesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 2), mat);
+    mesh.position.copy(pos);
+    this.game.scene.add(mesh);
+    this.fireballs.push({ mesh, t: 0 });
+    for (let k = 0; k < 70; k++) {
+      const a = rand.range(0, Math.PI * 2);
+      const e = rand.range(0.1, 1.4);
+      const s = rand.range(3, 11);
+      this.emit(pos.x, pos.y + 0.3, pos.z, Math.cos(a) * Math.cos(e) * s, Math.sin(e) * s + 2, Math.sin(a) * Math.cos(e) * s, rand.pick(['#ff7b00', '#ffb703', '#ffd166', '#e85d04', '#ffffff']), rand.range(0.06, 0.16), rand.range(0.4, 0.9), -9, -99, false);
+    }
+    for (let k = 0; k < 30; k++) {
+      this.emit(pos.x + rand.range(-1, 1), pos.y + 0.5, pos.z + rand.range(-1, 1), rand.range(-1.5, 1.5), rand.range(2, 5), rand.range(-1.5, 1.5), rand.pick(['#9a9a9a', '#b5b5b5', '#7d7d7d', '#cfcfcf']), rand.range(0.1, 0.2), rand.range(1.2, 2.2), 0.6, -99, false);
+    }
+    for (let k = 0; k < 26; k++) {
+      const a = rand.range(0, Math.PI * 2);
+      const r = rand.range(0, 2.6);
+      this.emit(pos.x + Math.cos(a) * r, groundY + 0.5, pos.z + Math.sin(a) * r, 0, -1, 0, '#1b1b1b', rand.range(0.35, 0.7), 30, -20, groundY + 0.015, true);
+    }
+    this.ring(new THREE.Vector3(pos.x, groundY + 0.2, pos.z), 9, 0.5, '#ffe8c0', 0.8);
+  }
+
   sparks(pos: THREE.Vector3) {
     for (let k = 0; k < 18; k++) {
       this.emit(pos.x, pos.y + 0.6, pos.z, rand.range(-4, 4), rand.range(1, 5), rand.range(-4, 4), rand.pick(['#ffd166', '#ffb703', '#ffffff']), rand.range(0.02, 0.04), 0.5, -14, -99, false);
@@ -249,6 +278,23 @@ export class Effects {
       r.mesh.scale.setScalar(0.2 + r.r * e);
       const m = r.mesh.material as THREE.MeshBasicMaterial;
       m.opacity = (m.userData.opacity ?? 0.6) * (1 - k);
+    }
+
+    // 爆発の火の玉
+    for (let i = this.fireballs.length - 1; i >= 0; i--) {
+      const f = this.fireballs[i];
+      f.t += dt;
+      const k = f.t / 0.6;
+      f.mesh.scale.setScalar(0.5 + Math.sqrt(Math.min(1, k)) * 4.5);
+      const m = f.mesh.material as THREE.MeshBasicMaterial;
+      m.opacity = Math.max(0, 1 - k);
+      m.color.setRGB(1, 0.75 - k * 0.5, 0.35 - k * 0.3);
+      if (k >= 1) {
+        this.game.scene.remove(f.mesh);
+        f.mesh.geometry.dispose();
+        m.dispose();
+        this.fireballs.splice(i, 1);
+      }
     }
 
     // 気絶の星

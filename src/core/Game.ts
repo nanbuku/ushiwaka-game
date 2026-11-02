@@ -135,6 +135,7 @@ export class Game {
     else this.karma.load();
     this.started = true;
     this.paused = false;
+    this.audio.startMusic();
     this.hud.hideOverlay();
     this.hud.setGameUIVisible(true);
     if (!this.testMode) this.input.lock();
@@ -178,6 +179,57 @@ export class Game {
     }
   }
 
+  /** 爆発（爆弾） */
+  explode(pos: THREE.Vector3, byPlayer: boolean) {
+    const gy = this.world.groundHeight(pos.x, pos.z);
+    this.fx.explosion(pos, gy);
+    this.audio.play('boom', pos, 1);
+    this.camRig.addShake(Math.max(0, 1.8 - this.camera.position.distanceTo(pos) / 22));
+    let kills = 0;
+    let faints = 0;
+    for (const n of this.npcs.list) {
+      const dx = n.pos.x - pos.x;
+      const dz = n.pos.z - pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 8.5) continue;
+      const dir = new THREE.Vector3(dx, 0, dz).normalize();
+      if (d < 5) {
+        if (n.alive) kills++;
+        n.fling(dir.multiplyScalar(14 - d * 2).add(new THREE.Vector3(0, 10 - d, 0)));
+      } else if (n.conscious) {
+        n.faint();
+        faints++;
+      }
+    }
+    this.npcs.panicAround(pos, 45);
+    for (const v of this.traffic.list) {
+      const d = Math.hypot(v.pos.x - pos.x, v.pos.z - pos.z);
+      if (d > 7.5) continue;
+      if (v === this.player.driving) this.player.exitVehicle();
+      const dir = v.pos.clone().sub(pos).setY(0).normalize();
+      v.blast(dir.multiplyScalar(10 - d).add(new THREE.Vector3(0, 12 - d, 0)));
+    }
+    const dp = this.player.pos.distanceTo(pos);
+    if (dp < 5.5) {
+      this.player.hurt(75 - dp * 12, pos);
+      this.player.vel.add(this.player.pos.clone().sub(pos).setY(0).normalize().multiplyScalar(9).setY(7));
+    }
+    for (const it of this.items.list) {
+      if (!it.body) continue;
+      const d = it.obj.position.distanceTo(pos);
+      if (d < 7) {
+        const dir = it.obj.position.clone().sub(pos).normalize();
+        it.body.applyImpulse({ x: dir.x * 0.4, y: 0.6, z: dir.z * 0.4 }, true);
+      }
+    }
+    if (this.nanku.pos.distanceTo(pos) < 10) this.hud.popText(this.nanku.headPos(), this.karma.mode === 'devil' ? 'たーまやー！' : 'きゃあっ！', '#ff4d6d', 26);
+    if (byPlayer) {
+      this.karma.crime('bomb', pos);
+      if (kills) this.karma.crime('kill', pos, '', kills, 'bomb');
+      if (faints) this.karma.crime('faint', pos, `${faints}人`, faints);
+    }
+  }
+
   private loop() {
     const now = performance.now();
     const dt = Math.min((now - this.lastT) / 1000, 1 / 20);
@@ -197,6 +249,11 @@ export class Game {
       this.physics.step(dt);
       this.fx.update(dt);
       this.sky.update(dt, this.player.pos, this.camera.position);
+      if (this.input.pressed('KeyN')) {
+        const on = this.audio.toggleMusic();
+        this.hud.toast(on ? '音楽: ON' : '音楽: OFF', 'info', 1.5);
+      }
+      this.audio.musicMode = this.karma.mode;
       this.saveT += dt;
       if (this.saveT > 30) {
         this.saveT = 0;

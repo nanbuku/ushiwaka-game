@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 import type { Game } from '../core/Game';
 import type { ItemDef } from './Items';
 
-export type CrimeKind = 'bite' | 'kill' | 'steal' | 'shrine' | 'faint';
+export type CrimeKind = 'bite' | 'kill' | 'steal' | 'shrine' | 'faint' | 'bomb';
 
 const VICTIM: Record<string, string> = {
   man: '男の人',
@@ -41,11 +41,11 @@ export class Karma {
     return 3;
   }
 
-  crime(kind: CrimeKind, pos: THREE.Vector3, detail = '', count = 1) {
+  crime(kind: CrimeKind, pos: THREE.Vector3, detail = '', count = 1, cause: 'bite' | 'car' | 'bomb' = 'bite') {
     const g = this.game;
     g.heat.report(kind, pos, detail === 'catcher');
     g.requests.onCrime(kind, detail, pos, count);
-    let pts = { bite: 3, kill: 12, steal: 2, shrine: 4, faint: 1 }[kind] * count;
+    let pts = { bite: 3, kill: 12, steal: 2, shrine: 4, faint: 1, bomb: 5 }[kind] * count;
     if (kind === 'kill' && (detail === 'child' || detail === 'elderly')) pts += 4;
     this.evil += pts;
     if (this.mode === 'devil') this.devil = Math.min(100, this.devil + pts * 0.5);
@@ -54,10 +54,13 @@ export class Karma {
         this.stats.bites++;
         g.hud.toast(`${VICTIM[detail] ?? '人'}に噛みついた　悪行 +${pts}`, 'bad');
         break;
-      case 'kill':
-        this.stats.kills++;
-        g.hud.toast(`${VICTIM[detail] ?? '人'}を噛み殺した…　悪行 +${pts}`, 'bad');
+      case 'kill': {
+        this.stats.kills += count;
+        const who = count > 1 ? `${count}人` : VICTIM[detail] ?? '人';
+        const how = cause === 'car' ? 'をはねた…' : cause === 'bomb' ? 'を爆発に巻き込んだ…' : 'を噛み殺した…';
+        g.hud.toast(`${who}${how}　悪行 +${pts}`, 'bad');
         break;
+      }
       case 'steal':
         this.stats.steals++;
         g.hud.toast(`${detail}を盗んだ　悪行 +${pts}`, 'bad');
@@ -67,6 +70,9 @@ export class Karma {
         this.stats.steals++;
         g.hud.toast(`お供え物の${detail}を盗んだ　バチ当たり！ 悪行 +${pts}`, 'bad');
         g.audio.play('steal', g.player.pos, 0.6);
+        break;
+      case 'bomb':
+        g.hud.toast(`爆弾を爆発させた！　悪行 +${pts}`, 'bad');
         break;
       case 'faint':
         this.stats.faints += count;

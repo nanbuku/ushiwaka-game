@@ -63,7 +63,7 @@ export class HUD {
       <div class="charge"><div></div></div>
       <div class="toasts"></div>
       <canvas class="minimap" width="200" height="200"></canvas>
-      <div class="help">WASD 移動 / Shift 走る / Space ジャンプ / 左クリック 噛む / 右クリック 吠える（長押しで大吠え） / E くわえる・話す / Q 投げる / F 乗り物 / M 地図</div>
+      <div class="help">WASD 移動 / Shift 走る / Space ジャンプ / 左クリック 噛む / 右クリック 吠える（長押しで大吠え） / E くわえる・話す / Q 投げる / F 乗り物 / M 地図 / N 音楽</div>
       <div class="flash"></div>
       <div class="fade"></div>
       <canvas class="bigmap hidden" width="720" height="720"></canvas>
@@ -116,7 +116,7 @@ export class HUD {
       <div class="controls">
         <div><b>WASD</b> 移動　<b>Shift</b> 走る　<b>Space</b> ジャンプ　<b>マウス</b> カメラ</div>
         <div><b>左クリック</b> 噛みつく　<b>右クリック</b> 吠える（長押しで大吠え）</div>
-        <div><b>E</b> くわえる・はなす・話す　<b>Q</b> 投げる　<b>F</b> 乗り物に乗る・降りる　<b>M</b> 地図　<b>Esc</b> 一時停止</div>
+        <div><b>E</b> くわえる・はなす・話す　<b>Q</b> 投げる　<b>F</b> 乗り物に乗る・降りる　<b>M</b> 地図　<b>N</b> 音楽　<b>Esc</b> 一時停止</div>
       </div>
       <div class="note">音が出ます。クリックするとマウスがゲーム画面に固定されます（Escで解除）。</div>`;
     this.overlay.querySelector('.new')?.addEventListener('click', () => onStart(true));
