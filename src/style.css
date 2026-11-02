@@ -517,3 +517,17 @@ body {
   width: 0;
   background: #ff3b30;
 }
+
+.speedo {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 30px;
+  font-weight: 800;
+  text-shadow: 0 2px 8px #000;
+  letter-spacing: 1px;
+}
+.hud:not(.ingame) > .speedo {
+  display: none;
+}

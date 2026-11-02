@@ -20,7 +20,11 @@ export type Sfx =
   | 'evil'
   | 'click'
   | 'splash'
-  | 'jump';
+  | 'jump'
+  | 'horn'
+  | 'crash'
+  | 'boom'
+  | 'fuse';
 
 /** WebAudio で効果音をその場で合成する（素材ファイル不要） */
 export class AudioSys {
@@ -151,7 +155,67 @@ export class AudioSys {
       case 'jump':
         this.tone(out, t, 'sine', 300, 520, 0.1, 0.18);
         break;
+      case 'horn':
+        this.tone(out, t, 'square', 392, 392, 0.32, 0.22, 1400);
+        this.tone(out, t, 'square', 494, 494, 0.32, 0.22, 1400);
+        break;
+      case 'crash':
+        this.noiseHit(out, t, 0.35, 'lowpass', 1800, 0.9);
+        this.tone(out, t, 'sine', 120, 40, 0.3, 0.9);
+        this.noiseHit(out, t + 0.05, 0.25, 'highpass', 3000, 0.4);
+        break;
+      case 'boom': {
+        const ws = this.distortion(out, 20);
+        this.noiseHit(ws, t, 1.4, 'lowpass', 700, 1.0);
+        this.tone(ws, t, 'sine', 90, 25, 1.2, 1.0);
+        this.noiseHit(out, t, 0.3, 'highpass', 2500, 0.5);
+        break;
+      }
+      case 'fuse':
+        this.noiseHit(out, t, 0.5, 'highpass', 5000, 0.25);
+        break;
     }
+  }
+
+  // ---------- エンジン音（運転中ずっと鳴る） ----------
+  private engine: { osc: OscillatorNode; osc2: OscillatorNode; gain: GainNode; lp: BiquadFilterNode } | null = null;
+  engineOn() {
+    const ctx = this.ctx;
+    if (!ctx || this.engine) return;
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 45;
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'square';
+    osc2.frequency.value = 22.5;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 400;
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0;
+    osc.connect(lp);
+    osc2.connect(lp);
+    lp.connect(gain).connect(this.master);
+    osc.start();
+    osc2.start();
+    gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + 0.3);
+    this.engine = { osc, osc2, gain, lp };
+  }
+  engineSet(speed01: number) {
+    if (!this.engine || !this.ctx) return;
+    const f = 45 + speed01 * 130;
+    const t = this.ctx.currentTime;
+    this.engine.osc.frequency.setTargetAtTime(f, t, 0.08);
+    this.engine.osc2.frequency.setTargetAtTime(f / 2, t, 0.08);
+    this.engine.lp.frequency.setTargetAtTime(350 + speed01 * 900, t, 0.1);
+  }
+  engineOff() {
+    if (!this.engine || !this.ctx) return;
+    const e = this.engine;
+    this.engine = null;
+    e.gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.3);
+    e.osc.stop(this.ctx.currentTime + 0.35);
+    e.osc2.stop(this.ctx.currentTime + 0.35);
   }
 
   // ---------- 合成部品 ----------

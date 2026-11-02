@@ -55,6 +55,8 @@ export class NPC {
   attackCd = 0;
   deadT = 0;
   stars: StarsHandle | null = null;
+  private flingVel: THREE.Vector3 | null = null;
+  private spin = 0;
   /** お店の人など、持ち場がある NPC */
   home: { x: number; y: number; z: number; yaw: number } | null = null;
   private body: RAPIER.RigidBody | null;
@@ -238,6 +240,22 @@ export class NPC {
       case 'dead':
         this.mode = 'lie';
         this.deadT += dt;
+        if (this.flingVel) {
+          const v = this.flingVel;
+          v.y -= 22 * dt;
+          this.pos.addScaledVector(v, dt);
+          this.spin += dt * 12;
+          this.model.body.rotation.z = this.spin;
+          const gy = g.world.groundHeight(this.pos.x, this.pos.z);
+          if (this.pos.y <= gy && v.y < 0) {
+            this.pos.y = gy;
+            this.flingVel = null;
+            this.model.body.rotation.z = 0;
+            g.fx.bloodPool(this.pos.clone(), this.model.look.child ? 0.7 : 1.0);
+            g.fx.bloodSpray(this.pos.clone().setY(gy + 0.3), new THREE.Vector3(v.x, 0, v.z).normalize(), 16, gy);
+            g.audio.play('kick', this.pos, 0.8);
+          }
+        }
         break;
     }
     this.speedNow = speed;
@@ -411,6 +429,25 @@ export class NPC {
       this.body = null;
     }
     if (rand.chance(0.6)) this.dropItem();
+  }
+
+  /** 車や爆風で吹っ飛ばされて死ぬ */
+  fling(vel: THREE.Vector3) {
+    const g = this.game;
+    if (this.state === 'dead') {
+      this.flingVel = vel.clone();
+      return;
+    }
+    this.state = 'dead';
+    this.removeStars();
+    this.model.fallDir = rand.chance(0.5) ? -1 : 1;
+    this.flingVel = vel.clone();
+    g.audio.play(SCREAM[this.kind], this.pos, 0.9);
+    if (this.body) {
+      g.physics.world.removeRigidBody(this.body);
+      this.body = null;
+    }
+    if (rand.chance(0.5)) this.dropItem();
   }
 
   private dropItem() {

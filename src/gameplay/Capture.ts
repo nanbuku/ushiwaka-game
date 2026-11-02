@@ -15,6 +15,7 @@ export class Capture {
     this.active = true;
     this.t = 0;
     this.phase = 0;
+    if (g.player.driving) g.player.exitVehicle();
     if (g.player.carrying) g.player.drop(false);
     g.audio.play('yelp', g.player.pos, 1);
     g.hud.toast('保健所につかまった！', 'bad', 4);

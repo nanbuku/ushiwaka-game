@@ -10,6 +10,7 @@ import { Nanku } from '../gameplay/Nanku';
 import { NPCManager } from '../npc/NPCManager';
 import { CameraRig } from '../player/CameraRig';
 import { Ushiwaka } from '../player/Ushiwaka';
+import { Traffic } from '../vehicles/Traffic';
 import { Dialogue } from '../ui/Dialogue';
 import { HUD } from '../ui/HUD';
 import { SkySystem } from '../world/Sky';
@@ -54,6 +55,7 @@ export class Game {
   player!: Ushiwaka;
   camRig!: CameraRig;
   npcs!: NPCManager;
+  traffic!: Traffic;
   nanku!: Nanku;
   hud: HUD;
   dialogue!: Dialogue;
@@ -95,6 +97,7 @@ export class Game {
     this.camRig = new CameraRig(this);
     this.nanku = new Nanku(this);
     this.npcs = new NPCManager(this);
+    this.traffic = new Traffic(this);
     this.dialogue = new Dialogue(this, document.body);
     this.hud.buildMap();
     this.player.teleport(this.world.spawn, this.world.spawnYaw);
@@ -162,6 +165,7 @@ export class Game {
   }
 
   respawnAtHome(revived: boolean) {
+    if (this.player.driving) this.player.exitVehicle();
     this.player.revive();
     this.heat.reset();
     this.npcs.dismissCatchers();
@@ -183,6 +187,7 @@ export class Game {
       this.dialogue.update(dt);
       this.player.update(dt);
       this.npcs.update(dt);
+      this.traffic.update(dt);
       this.heat.update(dt);
       this.capture.update(dt);
       this.nanku.update(dt);

@@ -38,6 +38,7 @@ export class HUD {
   private heatBox!: HTMLDivElement;
   private request!: HTMLDivElement;
   private captureEl!: HTMLDivElement;
+  private speedo!: HTMLDivElement;
   private v = new THREE.Vector3();
   private miniT = 0;
 
@@ -58,10 +59,11 @@ export class HUD {
       <div class="panel request hidden"></div>
       <div class="capture"><div class="capture-label">つかまりそう！ 走って逃げろ！</div><div class="capture-bar"><div></div></div></div>
       <div class="prompt"></div>
+      <div class="speedo hidden"></div>
       <div class="charge"><div></div></div>
       <div class="toasts"></div>
       <canvas class="minimap" width="200" height="200"></canvas>
-      <div class="help">WASD 移動 / Shift 走る / Space ジャンプ / 左クリック 噛む / 右クリック 吠える（長押しで大吠え） / E くわえる・話す / Q 投げる / M 地図</div>
+      <div class="help">WASD 移動 / Shift 走る / Space ジャンプ / 左クリック 噛む / 右クリック 吠える（長押しで大吠え） / E くわえる・話す / Q 投げる / F 乗り物 / M 地図</div>
       <div class="flash"></div>
       <div class="fade"></div>
       <canvas class="bigmap hidden" width="720" height="720"></canvas>
@@ -88,6 +90,7 @@ export class HUD {
     this.heatBox = q('.heat');
     this.request = q('.request');
     this.captureEl = q('.capture');
+    this.speedo = q('.speedo');
     this.setGameUIVisible(false);
   }
 
@@ -113,7 +116,7 @@ export class HUD {
       <div class="controls">
         <div><b>WASD</b> 移動　<b>Shift</b> 走る　<b>Space</b> ジャンプ　<b>マウス</b> カメラ</div>
         <div><b>左クリック</b> 噛みつく　<b>右クリック</b> 吠える（長押しで大吠え）</div>
-        <div><b>E</b> くわえる・はなす・話す　<b>Q</b> 投げる　<b>M</b> 地図　<b>Esc</b> 一時停止</div>
+        <div><b>E</b> くわえる・はなす・話す　<b>Q</b> 投げる　<b>F</b> 乗り物に乗る・降りる　<b>M</b> 地図　<b>Esc</b> 一時停止</div>
       </div>
       <div class="note">音が出ます。クリックするとマウスがゲーム画面に固定されます（Escで解除）。</div>`;
     this.overlay.querySelector('.new')?.addEventListener('click', () => onStart(true));
@@ -131,7 +134,7 @@ export class HUD {
       <div class="controls">
         <div><b>WASD</b> 移動　<b>Shift</b> 走る　<b>Space</b> ジャンプ</div>
         <div><b>左クリック</b> 噛みつく　<b>右クリック</b> 吠える（長押しで大吠え）</div>
-        <div><b>E</b> くわえる・はなす・話す　<b>Q</b> 投げる　<b>M</b> 地図</div>
+        <div><b>E</b> くわえる・はなす・話す　<b>Q</b> 投げる　<b>F</b> 乗り物　<b>M</b> 地図</div>
       </div>`;
     this.overlay.onclick = () => onResume?.();
   }
@@ -350,6 +353,10 @@ export class HUD {
     const rt = rl ? `<b>おつかい</b>　${rl}` : '';
     if (this.request.innerHTML !== rt) this.request.innerHTML = rt;
     this.request.classList.toggle('done', g.requests.complete);
+    // 速度計
+    const dv = g.player.driving;
+    this.speedo.classList.toggle('hidden', !dv);
+    if (dv) this.speedo.textContent = `${Math.round(Math.abs(dv.speed) * 3.6)} km/h`;
     // 捕獲
     this.captureEl.style.opacity = g.heat.capturing ? '1' : '0';
     (this.captureEl.querySelector('.capture-bar > div') as HTMLDivElement).style.width = `${g.heat.captureProgress * 100}%`;

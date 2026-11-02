@@ -17,6 +17,8 @@ export interface DogAnimState {
   happy: number;
   carrying: boolean;
   down: boolean;
+  /** 乗り物に座っている */
+  sit?: boolean;
 }
 
 const WHITE = '#fbf8f2';
@@ -165,6 +167,7 @@ export class DogModel {
       let target = pairs[i] * amp;
       if (!s.grounded && !s.swim) target = i < 2 ? -0.75 : 0.65;
       if (s.down) target = i < 2 ? -1.2 : 1.2;
+      if (s.sit) target = i < 2 ? 0.5 : -1.45;
       this.legs[i].rotation.x += (target - this.legs[i].rotation.x) * Math.min(1, dt * 18);
     }
 
@@ -176,6 +179,10 @@ export class DogModel {
     this.body.scale.y = 1 + Math.sin(t * 3.2) * 0.012;
     this.body.position.x = s.charge > 0.05 ? Math.sin(t * 60) * 0.006 * s.charge : 0;
     this.root.rotation.z = s.down ? Math.PI / 2 : 0;
+    if (s.sit) {
+      this.body.rotation.x = -0.5;
+      this.body.position.y = 0.06;
+    }
 
     // 頭: 吠え・噛みつき
     const bdur = s.barkBig ? 0.7 : 0.32;

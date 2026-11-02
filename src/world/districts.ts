@@ -3,6 +3,11 @@ import type { ItemId } from '../gameplay/Items';
 import { WorldBuilder } from './Builder';
 import { rectsOverlap, usable, type Lot, type Rect } from './Layout';
 import type { World } from './World';
+import type { VehicleKind } from '../vehicles/VehicleModel';
+
+function vehicle(w: World, x: number, y: number, z: number, yaw: number, kind: VehicleKind) {
+  w.vehicleSpots.push({ x, y, z, yaw, kind });
+}
 
 const WALLS = ['#f3ead8', '#e8dcc6', '#f5f1ea', '#d9cbb3', '#cfd8dc', '#f0e0d0', '#e4d4c0', '#c9d3cf', '#efe6da'];
 const ROOFS = ['#8e3b32', '#3e4a5c', '#5a4a3c', '#2f5d50', '#6b2f2f', '#4a5560', '#44403c'];
@@ -160,7 +165,8 @@ function townHome(w: World, lot: Lot, a: Rect) {
   b.flat('ground', cx + 8, y + 0.006, cz + 10, 22, 14, '#5b5d61');
   for (let i = 0; i < 4; i++) {
     b.flat('mark', cx - 1.5 + i * 5, y + 0.012, cz + 10, 0.12, 5, '#eeeeee');
-    if (rng.chance(0.65)) b.parkedCar(cx + 1 + i * 5, cz + 10, y, rng.chance(0.5) ? 0 : Math.PI, rng.pick(CARS));
+    if (i === 1) vehicle(w, cx + 1 + i * 5, y, cz + 10, 0, 'sedan');
+    else if (rng.chance(0.65)) b.parkedCar(cx + 1 + i * 5, cz + 10, y, rng.chance(0.5) ? 0 : Math.PI, rng.pick(CARS));
   }
   for (let i = 0; i < 6; i++) b.tree(cx + rng.range(-22, 22), cz - 20 + rng.range(-3, 3), y, rng.range(0.8, 1.1));
 }
@@ -373,7 +379,10 @@ function townShops(w: World, lot: Lot, a: Rect) {
   b.flat('ground', 55, y + 0.006, -26, 42, 30, '#55575c');
   for (let i = 0; i < 8; i++) {
     b.flat('mark', 37 + i * 5, y + 0.012, -33, 0.12, 6, '#f0f0f0');
-    if (i < 7 && rng.chance(0.55)) b.parkedCar(39.5 + i * 5, -33, y, Math.PI, rng.pick(CARS));
+    if (i < 7 && rng.chance(0.55)) {
+      if (i % 3 === 0) vehicle(w, 39.5 + i * 5, y, -33, Math.PI, rng.pick(['sedan', 'van', 'truck'] as const));
+      else b.parkedCar(39.5 + i * 5, -33, y, Math.PI, rng.pick(CARS));
+    }
   }
   b.cyl(36, y, -14, 0.06, 1.0, '#333333');
 
@@ -425,6 +434,8 @@ function townKonbini(w: World, lot: Lot, a: Rect) {
   b.vending(kx - 7, kz - 6.2, y, Math.PI, '#c8202a');
   b.vending(kx - 5.8, kz - 6.2, y, Math.PI, '#1f5fae');
   b.trashcan(kx - 3.8, kz - 6.4, y);
+  vehicle(w, kx - 2, y, kz - 8.6, Math.PI / 2, 'scooter');
+  vehicle(w, kx + 1, y, kz - 8.6, Math.PI / 2, 'scooter');
 
   // 神社
   const sx = a.x0 + 52;
@@ -552,7 +563,7 @@ function buildCity(w: World, lot: Lot) {
     b.building(cx, cz, lot.y, 34, 14, 9, '#d9d4c7', 0, 'shop');
     b.sign('ひだまり駅', cx, lot.y + 7.4, cz + 7.05, 0, 9, 1.4, '#1f4e8c', '#ffffff', true);
     b.flat('ground', cx, lot.y + 0.006, cz + 14, 34, 12, '#cfcac0');
-    for (let i = 0; i < 3; i++) b.parkedCar(cx - 10 + i * 6, cz + 16, lot.y, Math.PI / 2, '#f2c94c');
+    for (let i = 0; i < 3; i++) vehicle(w, cx - 10 + i * 6, lot.y, cz + 16, Math.PI / 2, 'taxi');
   } else if (rng.chance(0.5)) {
     plaza(w, lot, inner, true);
   } else {
@@ -616,7 +627,7 @@ function buildCivic(w: World, lot: Lot) {
     b.sign('ひだまり保健所', cx - 6, y + 9, cz - 0.95, 0, 10, 1.5, '#ffffff', '#2e7d32');
     b.sign('動物管理センター', cx - 6, y + 2.8, cz - 0.95, 0, 6, 0.7, '#2e7d32', '#ffffff');
     b.flat('ground', cx, y + 0.006, cz + 20, 60, 24, '#55575c');
-    for (let i = 0; i < 4; i++) b.parkedCar(cx - 15 + i * 7, cz + 22, y, 0, '#f2f2f2');
+    for (let i = 0; i < 4; i++) vehicle(w, cx - 15 + i * 7, y, cz + 22, 0, 'catcherVan');
     // 檻（捕まったら入れられる場所）
     const kx = cx + 26;
     const kz = cz - 14;
@@ -954,6 +965,7 @@ function buildCountry(w: World, lot: Lot) {
   const fz = hill ? cz - 12 : a.z1 - 16;
   b.house(fx, fz, y, 12, 9, rng.chance(0.5) ? 0 : Math.PI, '#d9c7a5', '#3b3b3b', 1);
   b.building(fx + 13, fz, y, 7, 8, 4.5, '#8a5a3a', 0, 'house');
+  vehicle(w, fx + 13, y, fz + 8, Math.PI / 2, 'truck');
   b.tree(fx - 9, fz + 2, y, 1.1, 'round');
   for (let i = 0; i < 3; i++) b.sphere(fx - 9 + rng.range(-1, 1), y + 2.8 + rng.range(0, 1), fz + 2 + rng.range(-1, 1), 0.18, '#f28c28');
   // 無人販売所

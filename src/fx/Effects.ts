@@ -143,6 +143,12 @@ export class Effects {
     }
   }
 
+  sparks(pos: THREE.Vector3) {
+    for (let k = 0; k < 18; k++) {
+      this.emit(pos.x, pos.y + 0.6, pos.z, rand.range(-4, 4), rand.range(1, 5), rand.range(-4, 4), rand.pick(['#ffd166', '#ffb703', '#ffffff']), rand.range(0.02, 0.04), 0.5, -14, -99, false);
+    }
+  }
+
   ripple(pos: THREE.Vector3) {
     this.ring(new THREE.Vector3(pos.x, pos.y + 0.08, pos.z), 0.8, 0.7, '#e8f6ff', 0.6);
   }

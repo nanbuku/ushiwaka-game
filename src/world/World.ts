@@ -5,6 +5,7 @@ import { WorldBuilder } from './Builder';
 import { buildDistrictLot } from './districts';
 import { computeLots, computeRoads, districtAt, HALF, inRect, LINES, ROAD, type District, type Lot, type Rect, type RoadKind, type RoadSeg } from './Layout';
 import { NavGraph } from './Navigation';
+import type { VehicleKind } from '../vehicles/VehicleModel';
 
 export interface StaticSpot {
   x: number;
@@ -45,6 +46,8 @@ export class World {
   nankuYaw = 0;
   homeArea: Rect = { x0: 0, x1: 0, z0: 0, z1: 0 };
   staticSpots: StaticSpot[] = [];
+  /** 乗れる乗り物の駐車場所 */
+  vehicleSpots: { x: number; y: number; z: number; yaw: number; kind: VehicleKind }[] = [];
   animated: Animated[] = [];
   /** 水場（池など）: 入ると泳ぐ */
   waters: { x: number; z: number; rx: number; rz: number; y: number }[] = [];
@@ -193,7 +196,7 @@ export class World {
       const mid = (r.a + r.b) / 2;
       const rot = r.axis === 'h' ? Math.PI / 2 : 0; // 'flat' の d 方向を道路の向きに
       const [x, z] = r.axis === 'h' ? [mid, r.line] : [r.line, mid];
-      const color = r.kind === 'rural' ? '#857e6c' : '#4d5057';
+      const color = r.kind === 'rural' ? '#8d8673' : '#62656c';
       b.flat('road', x, 0.006, z, hw * 2, len + hw * 2, color, rot);
       if (r.kind === 'rural') continue;
 

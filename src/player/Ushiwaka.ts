@@ -3,6 +3,7 @@ import type { Game } from '../core/Game';
 import { G, groups, RAPIER } from '../core/Physics';
 import { angleDiff, clamp, damp, rand } from '../core/Rng';
 import type { WorldItem } from '../gameplay/Items';
+import type { Vehicle } from '../vehicles/Vehicle';
 import { DogModel } from './DogModel';
 
 const RADIUS = 0.2;
@@ -19,6 +20,8 @@ export class Ushiwaka {
   hp = 100;
   maxHp = 100;
   carrying: WorldItem | null = null;
+  /** 運転中の乗り物 */
+  driving: Vehicle | null = null;
   dead = false;
   swimming = false;
   visualYOffset = 0;
@@ -86,6 +89,36 @@ export class Ushiwaka {
     this.hurtCd -= dt;
     this.sinceHurt += dt;
     if (this.sinceHurt > 5 && !this.dead) this.hp = Math.min(this.maxHp, this.hp + dt * 5);
+
+    // ---------- 運転中 ----------
+    if (this.driving) {
+      const v = this.driving;
+      if (canAct && inp.pressed('KeyF') && Math.abs(v.speed) < 8) {
+        this.exitVehicle();
+      } else {
+        v.drive(dt);
+        if (canAct && inp.mousePressed(2)) {
+          g.audio.play('horn', v.pos, 0.9);
+          this.bark(false);
+        }
+        g.audio.engineSet(Math.abs(v.speed) / v.spec.maxSpeed);
+        v.sync(dt);
+        const seat = v.seatWorld();
+        this.pos.copy(seat);
+        this.yaw = v.yaw;
+        this.vel.set(0, 0, 0);
+        this.body.setNextKinematicTranslation({ x: seat.x, y: seat.y + CENTER, z: seat.z });
+        this.syncModel(dt, 0);
+        return;
+      }
+    }
+    if (canAct && inp.pressed('KeyF')) {
+      const v = g.traffic.nearest(this.pos, 1.6);
+      if (v) {
+        this.enterVehicle(v);
+        return;
+      }
+    }
 
     // ---------- 移動入力 ----------
     let ix = 0;
@@ -178,6 +211,25 @@ export class Ushiwaka {
     this.syncModel(dt, hs);
   }
 
+  enterVehicle(v: Vehicle) {
+    const g = this.game;
+    this.driving = v;
+    g.traffic.board(v);
+    g.audio.play('jump', this.pos, 0.6);
+    g.hud.popText(this.headWorld(), v.kind === 'scooter' ? 'ブンブン!' : 'ブロロン!', '#ffffff', 24);
+  }
+
+  exitVehicle() {
+    const v = this.driving;
+    if (!v) return;
+    const g = this.game;
+    this.driving = null;
+    g.traffic.unboard(v);
+    const side = v.spec.halfW + 0.55;
+    const p = new THREE.Vector3(v.pos.x + Math.cos(v.yaw) * side, v.pos.y + 0.3, v.pos.z - Math.sin(v.yaw) * side);
+    this.teleport(p, v.yaw);
+  }
+
   private syncModel(dt: number, hs = 0) {
     this.visualYOffset = this.swimming ? -0.2 : 0;
     const r = this.model.root;
@@ -195,6 +247,7 @@ export class Ushiwaka {
       happy: this.game.karma.mode === 'devil' ? 1 : this.game.karma.happiness / 100,
       carrying: !!this.carrying,
       down: this.dead,
+      sit: !!this.driving,
     });
   }
 
@@ -286,7 +339,7 @@ export class Ushiwaka {
   }
 
   hurt(dmg: number, from: THREE.Vector3) {
-    if (this.dead || this.hurtCd > 0) return;
+    if (this.dead || this.hurtCd > 0 || this.driving) return;
     const g = this.game;
     this.hurtCd = 0.35;
     this.sinceHurt = 0;
@@ -314,6 +367,9 @@ export class Ushiwaka {
   get hint(): string {
     const g = this.game;
     if (this.dead) return '';
+    if (this.driving) return 'F: 降りる　W/S: アクセル・ブレーキ　A/D: ハンドル　Space: サイドブレーキ　右クリック: クラクション';
+    const veh = g.traffic.nearest(this.pos, 1.6);
+    if (veh) return `F: ${veh.kind === 'scooter' ? 'スクーター' : veh.kind === 'catcherVan' ? '保健所の車' : '車'}に乗る${veh.driver === 'npc' ? '（運転手を追い出す）' : ''}`;
     if (g.nanku.canTalk(this.pos)) return this.carrying ? `E: なんくに「${this.carrying.def.name}」をわたす` : 'E: なんくと話す';
     if (this.carrying) return `E: はなす　Q: なげる（${this.carrying.def.name}）`;
     const it = g.items.findNear(this.mouthWorld(), this.pos.y, 0.95);
