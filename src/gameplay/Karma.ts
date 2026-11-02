@@ -11,6 +11,7 @@ const VICTIM: Record<string, string> = {
   elderly: 'お年寄り',
   office: '会社員',
   clerk: '店員さん',
+  catcher: '保健所の職員',
 };
 
 const SAVE_KEY = 'ushiwaka-save-v1';
@@ -40,8 +41,10 @@ export class Karma {
     return 3;
   }
 
-  crime(kind: CrimeKind, _pos: THREE.Vector3, detail = '', count = 1) {
+  crime(kind: CrimeKind, pos: THREE.Vector3, detail = '', count = 1) {
     const g = this.game;
+    g.heat.report(kind, pos, detail === 'catcher');
+    g.requests.onCrime(kind, detail, pos, count);
     let pts = { bite: 3, kill: 12, steal: 2, shrine: 4, faint: 1 }[kind] * count;
     if (kind === 'kill' && (detail === 'child' || detail === 'elderly')) pts += 4;
     this.evil += pts;
@@ -95,6 +98,7 @@ export class Karma {
     this.mode = 'devil';
     this.fallPending = false;
     this.devil = Math.max(this.devil, 20);
+    this.game.requests.cancelIfModeChanged();
   }
 
   checkDevilEnd() {
@@ -118,6 +122,7 @@ export class Karma {
         ended: this.ended,
         stats: this.stats,
         hours: g.sky.hours,
+        requests: g.requests.save(),
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     } catch {
@@ -146,6 +151,7 @@ export class Karma {
       this.ended = d.ended ?? null;
       this.stats = { ...this.stats, ...(d.stats ?? {}) };
       if (typeof d.hours === 'number') this.game.sky.hours = d.hours;
+      this.game.requests.load(d.requests);
       return true;
     } catch {
       return false;

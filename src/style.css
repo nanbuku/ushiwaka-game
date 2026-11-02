@@ -29,6 +29,7 @@ body {
 }
 .hud > .meter,
 .hud > .status,
+.hud > .request,
 .hud > .minimap,
 .hud > .help,
 .hud > .prompt,
@@ -427,4 +428,92 @@ body {
   gap: 6px 26px;
   font-size: 16px;
   margin-top: 8px;
+}
+
+/* 通報レベル */
+.heat {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.heat-label {
+  font-size: 11px;
+  opacity: 0.8;
+}
+.heat-icons i {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-left: 3px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  background: transparent;
+}
+.heat-icons i.on {
+  background: #4cd964;
+  border-color: #c8ffd0;
+  box-shadow: 0 0 8px rgba(76, 217, 100, 0.8);
+}
+.heat-icons i.half {
+  background: rgba(76, 217, 100, 0.35);
+}
+.heat.seen .heat-icons i.on {
+  animation: heatBlink 0.5s infinite alternate;
+}
+@keyframes heatBlink {
+  to {
+    background: #ff3b30;
+    box-shadow: 0 0 10px rgba(255, 59, 48, 0.9);
+  }
+}
+.request {
+  position: absolute;
+  top: 168px;
+  left: 16px;
+  width: 290px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.hud.ingame > .request {
+  display: block;
+}
+.hud.ingame > .request.hidden {
+  display: none;
+}
+.request b {
+  color: #ffb3cf;
+}
+.hud.devil .request b {
+  color: #ff4d6d;
+}
+.request.done {
+  box-shadow: 0 0 16px rgba(255, 210, 63, 0.7);
+}
+.capture {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  font-weight: 800;
+  font-size: 22px;
+  text-shadow: 0 2px 6px #000;
+  color: #ffdf5c;
+}
+.capture-bar {
+  margin: 6px auto 0;
+  width: 200px;
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+.capture-bar > div {
+  height: 100%;
+  width: 0;
+  background: #ff3b30;
 }

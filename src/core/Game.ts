@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { Effects } from '../fx/Effects';
+import { Capture } from '../gameplay/Capture';
+import { Heat } from '../gameplay/Heat';
+import { NewsTV } from '../gameplay/News';
+import { Requests } from '../gameplay/Requests';
 import { ItemSystem } from '../gameplay/Items';
 import { Karma } from '../gameplay/Karma';
 import { Nanku } from '../gameplay/Nanku';
@@ -39,6 +43,10 @@ export class Game {
   audio = new AudioSys();
   events = new EventBus();
   karma = new Karma(this);
+  heat = new Heat(this);
+  capture = new Capture(this);
+  requests = new Requests(this);
+  news = new NewsTV(this);
   sky!: SkySystem;
   world!: World;
   fx!: Effects;
@@ -144,7 +152,7 @@ export class Game {
   }
 
   get inputLocked() {
-    return this.dialogue.active || this.paused || this.player.dead;
+    return this.dialogue.active || this.paused || this.player.dead || this.capture.active;
   }
 
   /** うしわかが倒れた */
@@ -155,6 +163,8 @@ export class Game {
 
   respawnAtHome(revived: boolean) {
     this.player.revive();
+    this.heat.reset();
+    this.npcs.dismissCatchers();
     const w = this.world;
     this.player.teleport(w.spawn, w.spawnYaw);
     this.camRig.snapBehind(w.spawnYaw);
@@ -173,7 +183,10 @@ export class Game {
       this.dialogue.update(dt);
       this.player.update(dt);
       this.npcs.update(dt);
+      this.heat.update(dt);
+      this.capture.update(dt);
       this.nanku.update(dt);
+      this.news.update(dt);
       this.items.update(dt);
       this.world.update(dt);
       this.physics.step(dt);

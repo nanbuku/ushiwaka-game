@@ -34,6 +34,7 @@ const MIX: Record<District, Partial<Record<HumanKind, number>>> = {
 export class NPCManager {
   list: NPC[] = [];
   private spawnT = 0;
+  private catcherT = 0;
   private staticNpc = new Map<StaticSpot, NPC | null>();
   private v = new THREE.Vector3();
 
@@ -49,7 +50,15 @@ export class NPCManager {
     const district = g.world.district(p.x, p.z);
     const target = DENSITY[district];
     this.spawnT -= dt;
-    const roaming = this.list.filter((n) => n.alive && !n.home).length;
+    const roaming = this.list.filter((n) => n.alive && !n.home && n.kind !== 'catcher').length;
+    // 通報レベルに応じて保健所の職員を出す
+    const want = [0, 1, 2, 4, 6, 8][g.heat.level] ?? 8;
+    const catchers = this.list.filter((n) => n.kind === 'catcher' && n.alive).length;
+    this.catcherT -= dt;
+    if (catchers < want && this.catcherT <= 0 && !g.capture.active) {
+      this.spawnCatcher();
+      this.catcherT = 1.4;
+    }
     if (this.spawnT <= 0 && roaming < target) {
       this.spawnRoamer(district);
       this.spawnT = 0.2;
@@ -102,6 +111,22 @@ export class NPCManager {
     const n = this.create(kind, x, a.y, z);
     n.setPath(a, b);
     n.yaw = Math.atan2(b.x - a.x, b.z - a.z);
+  }
+
+  private spawnCatcher() {
+    const g = this.game;
+    const p = g.player.pos;
+    const pick = g.world.nav.randomEdgeNear(p.x, p.z, 26, 60, rand);
+    if (!pick) return;
+    const [a, b, t] = pick;
+    const n = this.create('catcher', a.x + (b.x - a.x) * t, a.y, a.z + (b.z - a.z) * t);
+    n.setPath(a, b);
+    n.state = 'chase';
+  }
+
+  /** 追跡をやめさせる（捕まった後など） */
+  dismissCatchers() {
+    for (const n of this.list) if (n.kind === 'catcher' && n.state === 'chase') n.state = 'walk';
   }
 
   /** うしわかの正面にいる噛める相手 */

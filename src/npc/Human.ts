@@ -19,6 +19,8 @@ export interface HumanLook {
   tie?: string;
   apron?: string;
   hat?: string;
+  /** 保健所職員の捕獲網 */
+  net?: boolean;
 }
 
 export type HumanMode = 'idle' | 'walk' | 'run' | 'panic' | 'lie' | 'cower' | 'wave';
@@ -117,6 +119,19 @@ export class HumanModel {
     if (look.cane) {
       const cane = mesh(CYL, '#5a3d28', 0.03, H * 0.5, 0.03, 0, -armLen * 0.9 - H * 0.2, 0.05);
       this.armR.add(cane);
+    }
+    if (look.net) {
+      const pole = mesh(CYL, '#8a8a8a', 0.03, 1.5, 0.03, 0, -armLen * 0.9, 0.55);
+      pole.rotation.x = Math.PI / 2;
+      this.armR.add(pole);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.02, 6, 20), colorMat('#5a5a5a'));
+      ring.position.set(0, -armLen * 0.9, 1.5);
+      ring.rotation.x = Math.PI / 2;
+      this.armR.add(ring);
+      const netMesh = new THREE.Mesh(new THREE.ConeGeometry(0.27, 0.45, 12, 1, true), new THREE.MeshStandardMaterial({ color: '#dddddd', transparent: true, opacity: 0.55, side: THREE.DoubleSide, wireframe: true }));
+      netMesh.position.set(0, -armLen * 0.9 - 0.22, 1.5);
+      netMesh.rotation.x = Math.PI;
+      this.armR.add(netMesh);
     }
 
     // 頭
@@ -228,7 +243,7 @@ const PASTEL = ['#f7c5cc', '#c9e4de', '#faedcb', '#c6def1', '#dbcdf0', '#f2c6de'
 const BOTTOMS = ['#2f3b52', '#3a3a3a', '#6b5b45', '#4a5a6a', '#c2b59b', '#1f2a44'];
 const SHOES = ['#2a2a2a', '#f2f2f2', '#6b4a32', '#3b5ba5', '#a33'];
 
-export type HumanKind = 'man' | 'woman' | 'child' | 'elderly' | 'office' | 'clerk';
+export type HumanKind = 'man' | 'woman' | 'child' | 'elderly' | 'office' | 'clerk' | 'catcher';
 
 export function makeLook(kind: HumanKind, rng: Rng): HumanLook {
   const base: HumanLook = {
@@ -281,6 +296,15 @@ export function makeLook(kind: HumanKind, rng: Rng): HumanLook {
       base.tie = rng.pick(['#b23a48', '#2f6db5', '#d9a441', '#3a7d44']);
       base.shoes = '#1a1a1a';
       base.hairStyle = rng.chance(0.2) ? 'long' : 'short';
+      break;
+    case 'catcher':
+      base.height = rng.range(1.68, 1.82);
+      base.top = '#eef1ea';
+      base.bottom = '#5b6b5a';
+      base.shoes = '#2a2a2a';
+      base.hairStyle = 'cap';
+      base.hat = '#2e7d32';
+      base.net = true;
       break;
     case 'clerk':
       base.height = rng.range(1.58, 1.78);

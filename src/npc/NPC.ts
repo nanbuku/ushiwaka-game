@@ -7,10 +7,10 @@ import type { ItemId } from '../gameplay/Items';
 import type { NavNode } from '../world/Navigation';
 import { HumanModel, type HumanKind, type HumanMode } from './Human';
 
-export type NPCState = 'walk' | 'idle' | 'startle' | 'flee' | 'attack' | 'faint' | 'getup' | 'dead' | 'return';
+export type NPCState = 'walk' | 'idle' | 'startle' | 'flee' | 'attack' | 'faint' | 'getup' | 'dead' | 'return' | 'chase';
 
-const FAINT_BASE: Record<HumanKind, number> = { man: 0.3, woman: 0.38, child: 0.5, elderly: 0.72, office: 0.32, clerk: 0.32 };
-const HP: Record<HumanKind, number> = { man: 100, woman: 85, child: 55, elderly: 65, office: 95, clerk: 90 };
+const FAINT_BASE: Record<HumanKind, number> = { man: 0.3, woman: 0.38, child: 0.5, elderly: 0.72, office: 0.32, clerk: 0.32, catcher: 0.18 };
+const HP: Record<HumanKind, number> = { man: 100, woman: 85, child: 55, elderly: 65, office: 95, clerk: 90, catcher: 120 };
 const SCREAM: Record<HumanKind, 'scream_m' | 'scream_f' | 'scream_child' | 'scream_old'> = {
   man: 'scream_m',
   woman: 'scream_f',
@@ -18,6 +18,7 @@ const SCREAM: Record<HumanKind, 'scream_m' | 'scream_f' | 'scream_child' | 'scre
   elderly: 'scream_old',
   office: 'scream_m',
   clerk: 'scream_f',
+  catcher: 'scream_m',
 };
 const OUCH: Record<HumanKind, string[]> = {
   man: ['いってぇ!', 'うわっ!', 'なんだこの犬!'],
@@ -26,6 +27,7 @@ const OUCH: Record<HumanKind, string[]> = {
   elderly: ['ひぃっ!', 'あいたた…', 'なにするんじゃ!'],
   office: ['痛っ!?', 'スーツが!', 'ちょっと!'],
   clerk: ['きゃっ!', 'お客様!?', 'いたっ!'],
+  catcher: ['いてっ!', 'こいつ!', 'おとなしくしろ!', '暴れるな!'],
 };
 const DROPS: ItemId[] = ['wallet', 'phone', 'burger', 'onigiri', 'wallet'];
 
@@ -74,7 +76,7 @@ export class NPC {
     this.height = model.look.height;
     this.radius = model.look.child ? 0.17 : 0.23;
     this.walkSpeed = kind === 'elderly' ? rand.range(0.7, 1.0) : kind === 'child' ? rand.range(1.2, 1.7) : rand.range(1.15, 1.5);
-    this.runSpeed = kind === 'elderly' ? 2.6 : kind === 'child' ? 4.2 : 5.2;
+    this.runSpeed = kind === 'elderly' ? 2.6 : kind === 'child' ? 4.2 : kind === 'catcher' ? 5.8 : 5.2;
     this.brave = (kind === 'man' || kind === 'office') && rand.chance(0.32);
     this.pos.set(x, y, z);
     const w = game.physics.world;
@@ -109,7 +111,32 @@ export class NPC {
     const dDog = Math.hypot(dog.x - this.pos.x, dog.z - this.pos.z);
     let speed = 0;
 
+    if (this.kind === 'catcher' && (this.state === 'walk' || this.state === 'idle') && g.heat.level >= 1) this.state = 'chase';
     switch (this.state) {
+      case 'chase': {
+        if (g.heat.level < 1) {
+          this.state = 'walk';
+          break;
+        }
+        speed = this.runSpeed + g.heat.level * 0.22;
+        this.mode = 'run';
+        if (dDog < 1.0) {
+          speed = 0;
+          this.mode = 'panic';
+          this.faceTo(dog, dt);
+        } else if (dDog < 20 || !this.to) {
+          const dx = dog.x - this.pos.x;
+          const dz = dog.z - this.pos.z;
+          this.moveDir(dx / dDog, dz / dDog, Math.min(dDog - 0.8, speed * dt), dt);
+          this.from = null;
+          this.to = null;
+        } else {
+          this.fleeFrom.copy(dog);
+          this.walkGraph(dt, speed, false, true);
+        }
+        if (rand.chance(dt * 0.25)) g.hud.popText(this.headPos(), rand.pick(['待てー!', 'そっちへ行ったぞ!', '捕獲しろ!', 'あの白い犬だ!']), '#9be29b', 20);
+        break;
+      }
       case 'walk':
         speed = this.walkSpeed;
         this.walkGraph(dt, speed, false);
@@ -229,7 +256,7 @@ export class NPC {
     this.yaw += angleDiff(this.yaw, Math.atan2(dx, dz)) * damp(10, dt);
   }
 
-  private walkGraph(dt: number, speed: number, flee: boolean) {
+  private walkGraph(dt: number, speed: number, flee: boolean, toward = false) {
     const nav = this.game.world.nav;
     if (!this.to || !this.from) {
       const n = nav.nearest(this.pos.x, this.pos.z);
@@ -246,7 +273,7 @@ export class NPC {
     const dz = tz - this.pos.z;
     const d = Math.hypot(dx, dz);
     if (d < 0.4) {
-      const next = this.chooseNext(flee);
+      const next = this.chooseNext(flee, toward);
       this.from = this.to;
       this.to = next;
       return;
@@ -254,11 +281,23 @@ export class NPC {
     this.moveDir(dx / d, dz / d, Math.min(d, speed * dt), dt);
   }
 
-  private chooseNext(flee: boolean): NavNode {
+  private chooseNext(flee: boolean, toward = false): NavNode {
     const nav = this.game.world.nav;
     const cur = this.to!;
     const options = cur.links.filter((id) => id !== this.from!.id).map((id) => nav.nodes[id]);
     if (!options.length) return this.from!;
+    if (toward) {
+      let best = options[0];
+      let bd = Infinity;
+      for (const o of options) {
+        const d = Math.hypot(o.x - this.fleeFrom.x, o.z - this.fleeFrom.z) + rand.range(0, 4);
+        if (d < bd) {
+          bd = d;
+          best = o;
+        }
+      }
+      return best;
+    }
     if (flee) {
       let best = options[0];
       let bd = -1;
@@ -308,6 +347,10 @@ export class NPC {
     g.hud.popText(this.headPos(), rand.pick(OUCH[this.kind]), '#ffffff', 22);
     this.model.hop = 0.12;
     if (this.state === 'faint') return 'bite';
+    if (this.kind === 'catcher' && this.hp > this.maxHp * 0.3) {
+      this.state = 'chase';
+      return 'bite';
+    }
     if (this.brave && this.hp > this.maxHp * 0.35) {
       this.state = 'attack';
       this.stateT = 7;
@@ -319,7 +362,7 @@ export class NPC {
 
   /** 驚いて逃げる */
   scare(from: THREE.Vector3, delay = 0.5) {
-    if (!this.conscious || this.state === 'attack') return;
+    if (!this.conscious || this.state === 'attack' || this.state === 'chase') return;
     this.fleeFrom.copy(from);
     if (this.state !== 'flee') {
       this.state = 'startle';

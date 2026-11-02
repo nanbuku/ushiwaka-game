@@ -34,6 +34,10 @@ export class HUD {
   private overlay!: HTMLDivElement;
   private fadeEl!: HTMLDivElement;
   private bigMap!: HTMLCanvasElement;
+  private heatIcons!: HTMLSpanElement;
+  private heatBox!: HTMLDivElement;
+  private request!: HTMLDivElement;
+  private captureEl!: HTMLDivElement;
   private v = new THREE.Vector3();
   private miniT = 0;
 
@@ -50,7 +54,9 @@ export class HUD {
         <div class="meter-sub"><span>うしわかの元気</span></div>
         <div class="bar hp"><div></div></div>
       </div>
-      <div class="panel status"><div class="clock">09:00</div><div class="place">ひだまり町</div></div>
+      <div class="panel status"><div class="clock">09:00</div><div class="place">ひだまり町</div><div class="heat"><span class="heat-label">保健所</span><span class="heat-icons"></span></div></div>
+      <div class="panel request hidden"></div>
+      <div class="capture"><div class="capture-label">つかまりそう！ 走って逃げろ！</div><div class="capture-bar"><div></div></div></div>
       <div class="prompt"></div>
       <div class="charge"><div></div></div>
       <div class="toasts"></div>
@@ -78,6 +84,10 @@ export class HUD {
     this.fadeEl = q('.fade');
     this.overlay = q('.overlay');
     this.bigMap = q('.bigmap');
+    this.heatIcons = q('.heat-icons');
+    this.heatBox = q('.heat');
+    this.request = q('.request');
+    this.captureEl = q('.capture');
     this.setGameUIVisible(false);
   }
 
@@ -326,6 +336,23 @@ export class HUD {
     this.charge.classList.toggle('full', ch >= 1);
 
     this.bigMap.classList.toggle('hidden', !g.input.down('KeyM') && !g.input.down('Tab'));
+
+    // 通報レベル
+    const lv = g.heat.level;
+    const part = g.heat.value - lv;
+    let icons = '';
+    for (let i = 0; i < 5; i++) icons += `<i class="${i < lv ? 'on' : i === lv && part > 0.05 ? 'half' : ''}"></i>`;
+    if (this.heatIcons.innerHTML !== icons) this.heatIcons.innerHTML = icons;
+    this.heatBox.classList.toggle('seen', g.heat.seen && lv > 0);
+    // おつかい
+    const rl = g.requests.label;
+    this.request.classList.toggle('hidden', !rl);
+    const rt = rl ? `<b>おつかい</b>　${rl}` : '';
+    if (this.request.innerHTML !== rt) this.request.innerHTML = rt;
+    this.request.classList.toggle('done', g.requests.complete);
+    // 捕獲
+    this.captureEl.style.opacity = g.heat.capturing ? '1' : '0';
+    (this.captureEl.querySelector('.capture-bar > div') as HTMLDivElement).style.width = `${g.heat.captureProgress * 100}%`;
 
     this.miniT -= dt;
     if (this.miniT <= 0) {

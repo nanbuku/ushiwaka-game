@@ -78,7 +78,7 @@ export class Ushiwaka {
   update(dt: number) {
     const g = this.game;
     const inp = g.input;
-    const canAct = inp.active && !g.dialogue.active && !this.dead && !g.paused;
+    const canAct = inp.active && !g.dialogue.active && !this.dead && !g.paused && !g.capture.active;
     this.biteCd -= dt;
     this.barkCd -= dt;
     this.biteT += dt;

@@ -147,6 +147,7 @@ export class Nanku {
       const def = it.def;
       const stolen = it.stolen;
       const fromHome = def.id === 'flower' && inRect(g.world.homeArea, it.origin.x, it.origin.z, 1);
+      g.requests.onDeliver(it);
       const delta = k.gift(def, stolen);
       const fill = (arr: string[]) => arr.map((s) => s.replace('{item}', def.name));
       let lines: string[];
@@ -162,9 +163,28 @@ export class Nanku {
         g.audio.play('evil', this.pos, 0.6);
         g.hud.toast(`なんくの悪魔度 +${delta}`, 'evil');
       }
-      say(lines);
+      const claim = this.claimRequest();
+      say(claim ? [...lines, ...claim] : lines);
       k.save();
       this.checkEnding();
+      return;
+    }
+
+    const claim = this.claimRequest();
+    if (claim) {
+      say(claim);
+      k.save();
+      this.checkEnding();
+      return;
+    }
+    if (!g.requests.current && rand.chance(0.65)) {
+      const ask = g.requests.assign();
+      if (ask) {
+        say(ask);
+        return;
+      }
+    } else if (g.requests.current && rand.chance(0.4)) {
+      say(g.requests.reminder()!);
       return;
     }
 
@@ -177,6 +197,24 @@ export class Nanku {
       say(rand.chance(0.3) ? rand.pick(L.HINT_NORMAL) : rand.pick(pool));
     }
     this.checkEnding();
+  }
+
+  /** 達成済みのおつかいがあれば報酬を渡し、セリフを返す */
+  private claimRequest(): string[] | null {
+    const g = this.game;
+    const k = g.karma;
+    const r = g.requests.claim();
+    if (!r) return null;
+    if (k.mode === 'devil') {
+      k.devil = Math.min(100, k.devil + r.reward);
+      g.hud.toast(`おつかい完了！ なんくの悪魔度 +${r.reward}`, 'evil', 4);
+    } else {
+      k.happiness = Math.min(100, k.happiness + r.reward);
+      g.hud.toast(`おつかい完了！ なんくの幸福度 +${r.reward}`, 'good', 4);
+      g.fx.hearts(this.headPos());
+    }
+    g.audio.play('happy', this.pos, 0.9);
+    return r.lines;
   }
 
   checkEnding() {

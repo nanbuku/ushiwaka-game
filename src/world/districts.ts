@@ -171,43 +171,106 @@ function nankuHouse(w: World, lot: Lot, s: Slot) {
   const hw = 10;
   const hd = 8.5;
   const set = 3.4;
+  const H = 2.9;
+  const T = 0.16;
+  const rot = s.rot;
   const hx = s.cx + s.nx * (set + hd / 2);
   const hz = s.cz + s.nz * (set + hd / 2);
-  b.house(hx, hz, y, hw, hd, s.rot, '#fff3e3', '#c65b4e', 1);
-  // 芝生の庭
-  const [gx, gz] = L(hx, hz, s.rot, 0, hd / 2 + set / 2);
-  b.flat('ground', gx, y + 0.004, gz, s.len - 0.4, set, '#93c86c', s.rot);
-  // 白い低い柵（うしわかなら飛び越えられる）
+  const at = (lx: number, lz: number) => L(hx, hz, rot, lx, lz);
+  const put = (key: 'plain' | 'house', lx: number, ly: number, lz: number, sw: number, sh: number, sd: number, color: string, collide = true) => {
+    const [x, z] = at(lx, lz);
+    b.box(key, x, y + ly, z, sw, sh, sd, color, rot, collide);
+  };
+  const wallC = '#fff3e3';
+  // 床・壁（玄関は local x 1.6〜2.8 が開いている）
+  const [fx0, fz0] = at(0, 0);
+  b.flat('ground', fx0, y + 0.012, fz0, hw - 0.2, hd - 0.2, '#c9a27a', rot);
+  put('house', 0, 0, -hd / 2 + T / 2, hw, H, T, wallC);
+  put('house', -hw / 2 + T / 2, 0, 0, T, H, hd, wallC);
+  put('house', hw / 2 - T / 2, 0, 0, T, H, hd, wallC);
+  const dl = 1.6;
+  const dr = 2.8;
+  put('house', (-hw / 2 + dl) / 2, 0, hd / 2 - T / 2, dl + hw / 2, H, T, wallC);
+  put('house', (dr + hw / 2) / 2, 0, hd / 2 - T / 2, hw / 2 - dr, H, T, wallC);
+  put('house', (dl + dr) / 2, 2.15, hd / 2 - T / 2, dr - dl, H - 2.15, T, wallC);
+  // 間仕切り（左が寝室、右がリビング）
+  put('plain', 0.5, 0, (-hd / 2 - 0.7) / 2, 0.12, H, hd / 2 - 0.7, '#f4ebe0');
+  put('plain', 0.5, 0, (0.7 + hd / 2) / 2, 0.12, H, hd / 2 - 0.7, '#f4ebe0');
+  // 天井と屋根
+  put('plain', 0, H, 0, hw + 0.1, 0.14, hd + 0.1, '#f7f2ea');
+  b.batch.add('roof', WorldBuilder.mat(fx0, y + H + 0.14, fz0, rot, hw + 0.7, 1.3 + hw * 0.08, hd + 0.7), '#c65b4e');
+  put('plain', 2.2, 0, hd / 2 + 0.6, 1.8, 0.1, 1.1, '#b9b2a6', false);
+
+  // --- リビング ---
+  const tvTex = w.game.news.texture;
+  put('plain', 4.55, 0, -1.6, 0.5, 0.5, 1.6, '#6b4a32');
+  put('plain', 4.66, 0.5, -1.6, 0.1, 0.82, 1.42, '#1a1a1a', false);
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.73), new THREE.MeshBasicMaterial({ map: tvTex, toneMapped: false }));
+  const [sx, sz] = at(4.6, -1.6);
+  screen.position.set(sx, y + 0.91, sz);
+  screen.rotation.y = rot - Math.PI / 2;
+  b.extras.add(screen);
+  put('plain', 2.0, 0, -1.6, 0.9, 0.42, 2.0, '#e07a8f');
+  put('plain', 1.6, 0.42, -1.6, 0.22, 0.45, 2.0, '#d0687d', false);
+  const [cx, cz] = at(3.3, -1.6);
+  b.cyl(cx, y, cz, 0.45, 0.33, '#a0784f');
+  const [rx, rz] = at(3.0, -1.6);
+  b.flat('ground', rx, y + 0.016, rz, 3.0, 2.6, '#f4c6d4', rot);
+  put('plain', 2.6, 0, -hd / 2 + 0.45, 3.0, 0.9, 0.6, '#efe9df');
+  put('plain', 4.4, 0, -hd / 2 + 0.45, 0.75, 1.75, 0.65, '#f5f5f5');
+  const [ex, ez] = at(2.2, hd / 2 - 0.8);
+  b.flat('ground', ex, y + 0.018, ez, 1.6, 1.2, '#a7a39b', rot);
+  put('plain', 3.6, 0, hd / 2 - 0.45, 1.0, 0.6, 0.35, '#8a6a4a');
+  // --- 寝室 ---
+  put('plain', -3.7, 0, -2.6, 1.5, 0.42, 2.2, '#f2efe9');
+  put('plain', -3.7, 0.42, -2.3, 1.45, 0.12, 1.6, '#f6b5c8', false);
+  put('plain', -3.7, 0.42, -3.4, 1.0, 0.14, 0.4, '#ffffff', false);
+  put('plain', -1.1, 0, -hd / 2 + 0.45, 1.3, 0.72, 0.6, '#c8a27a');
+  put('plain', -1.1, 0.72, -hd / 2 + 0.45, 0.45, 0.03, 0.32, '#333333', false);
+  put('plain', -1.1, 0, -hd / 2 + 1.2, 0.45, 0.45, 0.45, '#8a6a4a');
+  put('plain', -4.65, 0, 1.4, 0.45, 1.4, 1.8, '#d9c3a5');
+  ['#c89f73', '#ffffff', '#f7c6d9', '#9ec9ff'].forEach((c, i) => {
+    const [tx, tz] = at(-4.65, 0.75 + i * 0.45);
+    b.sphere(tx, y + 1.62, tz, 0.17, c);
+  });
+  put('plain', -4.5, 0, 3.3, 0.7, 1.9, 1.3, '#bfa58a');
+  const light = new THREE.PointLight('#ffe8c8', 4, 14, 1);
+  const [lx, lz] = at(0.5, 0);
+  light.position.set(lx, y + 2.5, lz);
+  b.extras.add(light);
+  w.zones.push({ name: 'home', rect: { x0: Math.min(at(-hw / 2, -hd / 2)[0], at(hw / 2, hd / 2)[0]), x1: Math.max(at(-hw / 2, -hd / 2)[0], at(hw / 2, hd / 2)[0]), z0: Math.min(at(-hw / 2, -hd / 2)[1], at(hw / 2, hd / 2)[1]), z1: Math.max(at(-hw / 2, -hd / 2)[1], at(hw / 2, hd / 2)[1]) } });
+
+  // 芝生の庭と白い柵（うしわかなら飛び越えられる）
+  const [gx, gz] = at(0, hd / 2 + set / 2);
+  b.flat('ground', gx, y + 0.004, gz, s.len - 0.4, set, '#93c86c', rot);
   const zf = hd / 2 + set - 0.2;
   for (const [l0, l1] of [
     [-s.len / 2 + 0.2, 1.4],
     [3.2, s.len / 2 - 0.2],
   ] as const) {
-    const [x1, z1] = L(hx, hz, s.rot, l0, zf);
-    const [x2, z2] = L(hx, hz, s.rot, l1, zf);
+    const [x1, z1] = at(l0, zf);
+    const [x2, z2] = at(l1, zf);
     b.wall(x1, z1, x2, z2, y, 0.62, 0.1, '#ffffff');
   }
-  // 表札とポスト
-  const [px, pz] = L(hx, hz, s.rot, 3.6, zf + 0.06);
-  b.box('plain', px, y, pz, 0.12, 1.1, 0.12, '#7a5a40', s.rot);
-  const [sx, sz] = L(hx, hz, s.rot, 3.6, zf + 0.14);
-  b.sign('なんく', sx, y + 0.95, sz, s.rot, 0.7, 0.28, '#fffaf0', '#b04a5a');
-  // 花壇（なんくが育てている花）
+  const [px, pz] = at(4.4, zf + 0.06);
+  b.box('plain', px, y, pz, 0.12, 1.1, 0.12, '#7a5a40', rot);
+  const [nx0, nz0] = at(4.4, zf + 0.14);
+  b.sign('なんく', nx0, y + 0.95, nz0, rot, 0.7, 0.28, '#fffaf0', '#b04a5a');
   for (let i = 0; i < 4; i++) {
-    const [fx, fz] = L(hx, hz, s.rot, -4 + i * 1.1, hd / 2 + 0.6);
+    const [fx, fz] = at(-4 + i * 1.1, hd / 2 + 0.6);
     item(w, 'flower', fx, y, fz);
   }
-  const [tx, tz] = L(hx, hz, s.rot, -hw / 2 - 0.9, hd / 2 - 0.2);
+  const [tx, tz] = at(-hw / 2 - 0.9, hd / 2 - 0.2);
   b.tree(tx, tz, y, 0.9, 'sakura');
 
-  const [nx, nz] = L(hx, hz, s.rot, 2.4, hd / 2 + 1.5);
+  const [nx, nz] = at(3.7, hd / 2 + 1.4);
   w.nankuSpot.set(nx, y, nz);
-  w.nankuYaw = s.rot;
-  const [spx, spz] = L(hx, hz, s.rot, 2.4, hd / 2 + 2.9);
+  w.nankuYaw = rot;
+  const [spx, spz] = at(3.7, hd / 2 + 2.6);
   w.spawn.set(spx, y + 0.5, spz);
-  w.spawnYaw = s.rot + Math.PI;
-  const r1 = L(hx, hz, s.rot, -s.len / 2, -hd / 2);
-  const r2 = L(hx, hz, s.rot, s.len / 2, hd / 2 + set);
+  w.spawnYaw = rot + Math.PI;
+  const r1 = at(-s.len / 2, -hd / 2);
+  const r2 = at(s.len / 2, hd / 2 + set);
   w.homeArea = { x0: Math.min(r1[0], r2[0]), x1: Math.max(r1[0], r2[0]), z0: Math.min(r1[1], r2[1]), z1: Math.max(r1[1], r2[1]) };
 }
 
