@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import { clamp, rand } from '../core/Rng';
-import { HumanModel, makeLook } from '../npc/Human';
+import { makeLook } from '../npc/Human';
+import { createHuman } from '../npc/KenneyHuman';
 import { NPC } from '../npc/NPC';
 import { ROAD, type RoadSeg } from '../world/Layout';
 import { Vehicle, type Lane } from './Vehicle';
@@ -292,7 +293,7 @@ export class Traffic {
     if (v.driver === 'npc') {
       const side = new THREE.Vector3(Math.cos(v.yaw), 0, -Math.sin(v.yaw)).multiplyScalar(-(v.spec.halfW + 0.8));
       const kind = rand.pick(['man', 'woman', 'office', 'elderly'] as const);
-      const n = new NPC(g, kind, new HumanModel(makeLook(kind, rand)), v.pos.x + side.x, v.pos.y, v.pos.z + side.z);
+      const n = new NPC(g, kind, createHuman(g.assets, makeLook(kind, rand), kind), v.pos.x + side.x, v.pos.y, v.pos.z + side.z);
       g.npcs.list.push(n);
       n.scare(v.pos, 0.3);
       g.hud.popText(n.headPos(), rand.pick(['ちょっと!? 私の車!', '犬が運転してる!?', 'うそでしょ!?']), '#ffffff', 22);

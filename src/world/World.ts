@@ -64,7 +64,7 @@ export class World {
     const t0 = performance.now();
     this.lots = computeLots();
     this.roads = computeRoads();
-    this.b = new WorldBuilder(this.game.physics, this.rng);
+    this.b = new WorldBuilder(this.game.physics, this.rng, this.game.assets);
     this.buildGround();
     this.buildRoads();
     for (const lot of this.lots) {
@@ -72,6 +72,7 @@ export class World {
       buildDistrictLot(this, lot);
     }
     this.buildBorders();
+    this.buildTrafficLights();
     this.nav.buildFromLots(this.lots);
     const stats = this.b.finish(this.root);
     this.game.scene.add(this.root);
@@ -229,6 +230,48 @@ export class World {
         if (p.hw === 0) continue;
         const center = end + dir * (p.hw + Math.max(p.sw, 1.5) / 2);
         for (let a = -hw + 0.6; a <= hw - 0.6; a += 0.95) put(center, a, 0.48, 3.2, '#f2f2f2');
+      }
+    }
+  }
+
+  /** 大通りの交差点に信号機を立てる */
+  private buildTrafficLights() {
+    const b = this.b;
+    if (!b.hasModel('roads/traffic-light')) return;
+    const size = b.modelSize('roads/traffic-light')!;
+    const s = 4.4 / size.y;
+    const hwAt = (axis: 'h' | 'v', X: number, Z: number) => {
+      let hw = 0;
+      let avenue = false;
+      for (const r of this.roads) {
+        if (r.axis !== axis) continue;
+        const along = axis === 'h' ? X : Z;
+        const line = axis === 'h' ? Z : X;
+        if (r.line === line && (r.a === along || r.b === along)) {
+          hw = Math.max(hw, ROAD[r.kind].hw);
+          if (r.kind === 'avenue') avenue = true;
+        }
+      }
+      return { hw, avenue };
+    };
+    for (const X of LINES) {
+      for (const Z of LINES) {
+        const h = hwAt('h', X, Z);
+        const v = hwAt('v', X, Z);
+        if (!(h.avenue || v.avenue) || h.hw === 0 || v.hw === 0) continue;
+        for (const [sx, sz] of [
+          [1, 1],
+          [-1, 1],
+          [1, -1],
+          [-1, -1],
+        ]) {
+          const px = X + sx * (v.hw + 1.1);
+          const pz = Z + sz * (h.hw + 1.1);
+          if (Math.abs(px) > HALF || Math.abs(pz) > HALF) continue;
+          const y = this.groundHeight(px, pz);
+          b.model('roads/traffic-light', px, y, pz, Math.atan2(X - px, Z - pz), s, { collide: 'none' });
+          this.game.physics.staticCylinder(px, y + 1.5, pz, 1.5, 0.12);
+        }
       }
     }
   }

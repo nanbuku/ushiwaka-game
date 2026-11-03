@@ -42,6 +42,26 @@ function item(w: World, id: ItemId, x: number, y: number, z: number, owner: 'non
   w.game.items.spawn(id, x, y, z, owner, w.rng.range(0, Math.PI * 2));
 }
 
+/** Kenney のビルを置く。置いたら実寸を返す */
+function kenneyBuilding(w: World, x: number, z: number, y: number, bw: number, bd: number, h: number, rot: number, tallOk = true) {
+  const b = w.b;
+  const tall = tallOk && h > 24;
+  const pool = (tall ? 'abcde'.split('').map((c) => `commercial/building-skyscraper-${c}`) : 'abcdefghijklmn'.split('').map((c) => `commercial/building-${c}`)).filter((k) => b.hasModel(k));
+  if (!pool.length) return null;
+  const aspect = bw / bd;
+  const ranked = pool
+    .map((k) => {
+      const s = b.modelSize(k)!;
+      return { k, diff: Math.abs(Math.log(s.x / s.z / aspect)) + w.rng.range(0, 0.35) };
+    })
+    .sort((p, q) => p.diff - q.diff);
+  const key = ranked[0].k;
+  const size = b.modelSize(key)!;
+  const s = Math.min(bw / size.x, bd / size.z);
+  const ky = Math.max(tall ? 0.75 : 0.85, Math.min(tall ? 2.2 : 1.35, h / (size.y * s)));
+  return b.model(key, x, y, z, rot, [s, s * ky, s]);
+}
+
 // =====================================================================
 // 住宅の並べ方
 // =====================================================================
@@ -101,7 +121,7 @@ function placeHouse(w: World, lot: Lot, s: Slot) {
   const hz = s.cz + s.nz * (set + hd / 2);
   b.house(hx, hz, y, hw, hd, s.rot, rng.pick(WALLS), rng.pick(ROOFS), rng.chance(0.45) ? 2 : 1);
   const zf = hd / 2 + set - 0.25;
-  const door = hw * 0.22;
+  const door = b.hasModel('suburban/building-type-a') ? 0 : hw * 0.22;
   const fence = rng.pick(['block', 'hedge', 'none', 'block', 'low'] as const);
   if (fence !== 'none') {
     const h = fence === 'block' ? 1.15 : fence === 'hedge' ? 1.0 : 0.6;
@@ -207,38 +227,74 @@ function nankuHouse(w: World, lot: Lot, s: Slot) {
   b.batch.add('roof', WorldBuilder.mat(fx0, y + H + 0.14, fz0, rot, hw + 0.7, 1.3 + hw * 0.08, hd + 0.7), '#c65b4e');
   put('plain', 2.2, 0, hd / 2 + 0.6, 1.8, 0.1, 1.1, '#b9b2a6', false);
 
-  // --- リビング ---
+  // --- 家具（Kenney の家具があれば使う） ---
+  const furn = (key: string, lx: number, lz: number, ly: number, frot: number, width: number, collide = true) => {
+    if (!b.hasModel(key)) return null;
+    const size = b.modelSize(key)!;
+    const [x, z] = at(lx, lz);
+    return b.model(key, x, y + ly, z, rot + frot, width / size.x, { collide: collide ? 'box' : 'none' });
+  };
   const tvTex = w.game.news.texture;
-  put('plain', 4.55, 0, -1.6, 0.5, 0.5, 1.6, '#6b4a32');
-  put('plain', 4.66, 0.5, -1.6, 0.1, 0.82, 1.42, '#1a1a1a', false);
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.73), new THREE.MeshBasicMaterial({ map: tvTex, toneMapped: false }));
-  const [sx, sz] = at(4.6, -1.6);
-  screen.position.set(sx, y + 0.91, sz);
+  // リビング：テレビ（ニュースが映る）・ソファ・ちゃぶ台・キッチン
+  const cab = furn('furniture/cabinetTelevision', 4.6, -1.6, 0, -Math.PI / 2, 1.6);
+  const cabH = cab ? cab.h : 0.5;
+  if (!cab) put('plain', 4.55, 0, -1.6, 0.5, 0.5, 1.6, '#6b4a32');
+  const tv = furn('furniture/televisionModern', 4.68, -1.6, cabH, -Math.PI / 2, 1.3, false);
+  if (!tv) put('plain', 4.66, cabH, -1.6, 0.1, 0.82, 1.42, '#1a1a1a', false);
+  const screenH = tv ? tv.h * 0.72 : 0.73;
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.18, screenH), new THREE.MeshBasicMaterial({ map: tvTex, toneMapped: false }));
+  const [sx, sz] = at(tv ? 4.68 - tv.d / 2 - 0.012 : 4.6, -1.6);
+  screen.position.set(sx, y + cabH + (tv ? tv.h * 0.56 : 0.41), sz);
   screen.rotation.y = rot - Math.PI / 2;
   b.extras.add(screen);
-  put('plain', 2.0, 0, -1.6, 0.9, 0.42, 2.0, '#e07a8f');
-  put('plain', 1.6, 0.42, -1.6, 0.22, 0.45, 2.0, '#d0687d', false);
-  const [cx, cz] = at(3.3, -1.6);
-  b.cyl(cx, y, cz, 0.45, 0.33, '#a0784f');
-  const [rx, rz] = at(3.0, -1.6);
-  b.flat('ground', rx, y + 0.016, rz, 3.0, 2.6, '#f4c6d4', rot);
-  put('plain', 2.6, 0, -hd / 2 + 0.45, 3.0, 0.9, 0.6, '#efe9df');
-  put('plain', 4.4, 0, -hd / 2 + 0.45, 0.75, 1.75, 0.65, '#f5f5f5');
+  if (!furn('furniture/loungeSofa', 2.0, -1.6, 0, Math.PI / 2, 2.1)) {
+    put('plain', 2.0, 0, -1.6, 0.9, 0.42, 2.0, '#e07a8f');
+    put('plain', 1.6, 0.42, -1.6, 0.22, 0.45, 2.0, '#d0687d', false);
+  }
+  if (!furn('furniture/tableCoffee', 3.3, -1.6, 0, Math.PI / 2, 1.1)) {
+    const [cx, cz] = at(3.3, -1.6);
+    b.cyl(cx, y, cz, 0.45, 0.33, '#a0784f');
+  }
+  if (!furn('furniture/rugRound', 3.0, -1.6, 0.016, 0, 2.8, false)) {
+    const [rx, rz] = at(3.0, -1.6);
+    b.flat('ground', rx, y + 0.016, rz, 3.0, 2.6, '#f4c6d4', rot);
+  }
+  const kitchen = ['furniture/kitchenCabinet', 'furniture/kitchenSink', 'furniture/kitchenStove'];
+  if (kitchen.every((k) => b.hasModel(k))) {
+    kitchen.forEach((k, i) => furn(k, 1.5 + i * 0.85, -hd / 2 + 0.42, 0, 0, 0.85));
+    furn('furniture/kitchenFridge', 4.35, -hd / 2 + 0.45, 0, 0, 0.85);
+  } else {
+    put('plain', 2.6, 0, -hd / 2 + 0.45, 3.0, 0.9, 0.6, '#efe9df');
+    put('plain', 4.4, 0, -hd / 2 + 0.45, 0.75, 1.75, 0.65, '#f5f5f5');
+  }
+  furn('furniture/pottedPlant', 4.5, 3.4, 0, 0, 0.55);
+  furn('furniture/lampRoundFloor', 1.05, -3.2, 0, 0, 0.45);
   const [ex, ez] = at(2.2, hd / 2 - 0.8);
   b.flat('ground', ex, y + 0.018, ez, 1.6, 1.2, '#a7a39b', rot);
   put('plain', 3.6, 0, hd / 2 - 0.45, 1.0, 0.6, 0.35, '#8a6a4a');
-  // --- 寝室 ---
-  put('plain', -3.7, 0, -2.6, 1.5, 0.42, 2.2, '#f2efe9');
-  put('plain', -3.7, 0.42, -2.3, 1.45, 0.12, 1.6, '#f6b5c8', false);
-  put('plain', -3.7, 0.42, -3.4, 1.0, 0.14, 0.4, '#ffffff', false);
-  put('plain', -1.1, 0, -hd / 2 + 0.45, 1.3, 0.72, 0.6, '#c8a27a');
-  put('plain', -1.1, 0.72, -hd / 2 + 0.45, 0.45, 0.03, 0.32, '#333333', false);
-  put('plain', -1.1, 0, -hd / 2 + 1.2, 0.45, 0.45, 0.45, '#8a6a4a');
-  put('plain', -4.65, 0, 1.4, 0.45, 1.4, 1.8, '#d9c3a5');
-  ['#c89f73', '#ffffff', '#f7c6d9', '#9ec9ff'].forEach((c, i) => {
-    const [tx, tz] = at(-4.65, 0.75 + i * 0.45);
-    b.sphere(tx, y + 1.62, tz, 0.17, c);
-  });
+  // 寝室：ベッド（くまのぬいぐるみ）・机・本棚
+  const bed = furn('furniture/bedSingle', -3.7, -2.6, 0, 0, 1.15);
+  if (!bed) {
+    put('plain', -3.7, 0, -2.6, 1.5, 0.42, 2.2, '#f2efe9');
+    put('plain', -3.7, 0.42, -2.3, 1.45, 0.12, 1.6, '#f6b5c8', false);
+    put('plain', -3.7, 0.42, -3.4, 1.0, 0.14, 0.4, '#ffffff', false);
+  }
+  furn('furniture/bear', -3.75, -3.15, bed ? bed.h * 0.75 : 0.55, 0, 0.42, false);
+  const desk = furn('furniture/desk', -1.1, -hd / 2 + 0.45, 0, 0, 1.3);
+  if (!desk) put('plain', -1.1, 0, -hd / 2 + 0.45, 1.3, 0.72, 0.6, '#c8a27a');
+  if (!furn('furniture/laptop', -1.1, -hd / 2 + 0.5, desk ? desk.h : 0.72, 0, 0.42, false)) put('plain', -1.1, 0.72, -hd / 2 + 0.45, 0.45, 0.03, 0.32, '#333333', false);
+  if (!furn('furniture/chairDesk', -1.1, -hd / 2 + 1.25, 0, Math.PI, 0.55)) put('plain', -1.1, 0, -hd / 2 + 1.2, 0.45, 0.45, 0.45, '#8a6a4a');
+  const shelf = furn('furniture/bookcaseOpen', -4.6, 1.4, 0, Math.PI / 2, 1.0);
+  if (!shelf) {
+    put('plain', -4.65, 0, 1.4, 0.45, 1.4, 1.8, '#d9c3a5');
+    ['#c89f73', '#ffffff', '#f7c6d9', '#9ec9ff'].forEach((c, i) => {
+      const [tx, tz] = at(-4.65, 0.75 + i * 0.45);
+      b.sphere(tx, y + 1.62, tz, 0.17, c);
+    });
+  } else {
+    furn('furniture/books', -4.6, 1.4, shelf.h * 0.52, Math.PI / 2, 0.5, false);
+    furn('furniture/plantSmall1', -4.6, 1.25, shelf.h, Math.PI / 2, 0.25, false);
+  }
   put('plain', -4.5, 0, 3.3, 0.7, 1.9, 1.3, '#bfa58a');
   const light = new THREE.PointLight('#ffe8c8', 4, 14, 1);
   const [lx, lz] = at(0.5, 0);
@@ -390,7 +446,7 @@ function townShops(w: World, lot: Lot, a: Rect) {
   for (let i = 0; i < 4; i++) placeHouse(w, lot, { edge: 'n', cx: 30 + i * 14, cz: a.z0, rot: Math.PI, len: 13, nx: 0, nz: 1 });
   for (let i = 0; i < 4; i++) {
     const z = a.z0 + 20 + i * 15;
-    b.building(a.x1 - 6, z, y, 12, 12, rng.range(9, 15), rng.pick(BLD), Math.PI / 2, 'office');
+    if (!kenneyBuilding(w, a.x1 - 6, z, y, 12, 12, rng.range(9, 15), Math.PI / 2, false)) b.building(a.x1 - 6, z, y, 12, 12, rng.range(9, 15), rng.pick(BLD), Math.PI / 2, 'office');
   }
 }
 
@@ -527,11 +583,14 @@ function perimeterBuildings(
       const set = rng.range(0.5, 2);
       const cx = e.x0 + tx * (t + bw / 2) + e.nx * (set + bd / 2);
       const cz = e.z0 + tz * (t + bw / 2) + e.nz * (set + bd / 2);
-      b.building(cx, cz, y, bw, bd, h, rng.pick(opt.colors), e.rot, opt.style);
-      if (opt.signs && rng.chance(0.55)) {
-        const [sx, sz] = L(cx, cz, e.rot, 0, bd / 2 + 0.06);
+      const placed = kenneyBuilding(w, cx, cz, y, bw, bd, h, e.rot, opt.style === 'office');
+      if (!placed) b.building(cx, cz, y, bw, bd, h, rng.pick(opt.colors), e.rot, opt.style);
+      const fd = placed ? placed.d : bd;
+      const fh = placed ? placed.h : h;
+      if (opt.signs && rng.chance(0.55) && fh > 6) {
+        const [sx, sz] = L(cx, cz, e.rot, 0, fd / 2 + 0.08);
         const txt = rng.pick(opt.signs);
-        b.sign(txt, sx, y + rng.range(4.5, Math.min(h - 1, 9)), sz, e.rot, Math.min(bw * 0.7, 6), 1.1, rng.pick(['#1b1b2f', '#2b0f2f', '#0f2b2f', '#3a1010']), rng.pick(['#ff5fa2', '#5ff2ff', '#ffe066', '#7dff7a', '#ff8a3d']), true);
+        b.sign(txt, sx, y + rng.range(Math.min(4.5, fh - 1.5), Math.min(fh - 1, 9)), sz, e.rot, Math.min(bw * 0.6, 5.5), 1.0, rng.pick(['#1b1b2f', '#2b0f2f', '#0f2b2f', '#3a1010']), rng.pick(['#ff5fa2', '#5ff2ff', '#ffe066', '#7dff7a', '#ff8a3d']), true);
       }
       t += bw + rng.range(2, 6);
     }

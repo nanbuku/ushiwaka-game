@@ -3,7 +3,8 @@ import type { Game } from '../core/Game';
 import { rand } from '../core/Rng';
 import type { District } from '../world/Layout';
 import type { StaticSpot } from '../world/World';
-import { HumanModel, makeLook, type HumanKind } from './Human';
+import { makeLook, type HumanKind } from './Human';
+import { createHuman } from './KenneyHuman';
 import { NPC } from './NPC';
 
 const DENSITY: Record<District, number> = {
@@ -92,7 +93,7 @@ export class NPCManager {
   }
 
   private create(kind: HumanKind, x: number, y: number, z: number) {
-    const model = new HumanModel(makeLook(kind, rand));
+    const model = createHuman(this.game.assets, makeLook(kind, rand), kind);
     const n = new NPC(this.game, kind, model, x, y, z);
     this.list.push(n);
     return n;

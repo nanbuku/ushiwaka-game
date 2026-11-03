@@ -59,3 +59,9 @@ npm run build
 - 技術: TypeScript + [Three.js](https://threejs.org/) + [Rapier](https://rapier.rs/)（物理）+ Vite
 - 設計と進捗: [docs/DESIGN.md](docs/DESIGN.md)
 - テスト用: URL に `?test` を付けるとタイトルを飛ばして即開始します（`window.__game` からゲームの状態を操作できます）
+
+## 素材
+
+3D モデルは [Kenney](https://kenney.nl/)（CC0）の City Kit (Commercial / Suburban / Roads)、Car Kit、Nature Kit、Furniture Kit、Food Kit、Animated Characters を使っています。
+元の ZIP は `assets-src/kenney/`、ゲームで読み込むファイルは `public/models/` にあります。
+URL に `?noassets` を付けると、素材を使わずにコードで作った見た目で起動します（動作が重いとき用）。

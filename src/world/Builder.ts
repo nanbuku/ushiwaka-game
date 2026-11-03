@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Assets } from '../assets/Assets';
 import type { Physics } from '../core/Physics';
 import { Rng } from '../core/Rng';
 import { Batcher } from './Batcher';
@@ -18,7 +19,7 @@ export class WorldBuilder {
   /** 個別メッシュ（看板など）の置き場 */
   extras = new THREE.Group();
 
-  constructor(public physics: Physics, public rng: Rng) {
+  constructor(public physics: Physics, public rng: Rng, public assets: Assets) {
     const b = this.batch;
     b.define('plain', GEO.box, MAT.plain);
     b.define('office', GEO.box, MAT.office);
@@ -49,6 +50,49 @@ export class WorldBuilder {
     const c = Math.cos(rotY);
     const s = Math.sin(rotY);
     return [x + lx * c + lz * s, z - lx * s + lz * c];
+  }
+
+  // ---------- Kenney モデル ----------
+  /** モデルがあるか */
+  hasModel(key: string) {
+    return !!this.assets.get(key);
+  }
+
+  /**
+   * モデルを置く。足元の中心が (x, y, z) に来るように置き、回転 rotY・拡大 scale。
+   * collide: 'box' = 外形の箱、'none' = なし。戻り値は置いたときの実寸（なければ null）
+   */
+  model(key: string, x: number, y: number, z: number, rotY: number, scale: number | [number, number, number], opt: { collide?: 'box' | 'none'; tint?: Record<string, THREE.ColorRepresentation>; cast?: boolean; variant?: number } = {}) {
+    const md = this.assets.get(key);
+    if (!md) return null;
+    const S: [number, number, number] = typeof scale === 'number' ? [scale, scale, scale] : scale;
+    // 外形の中心が (x, z) に来るようにずらす
+    const [ox, oz] = WorldBuilder.local(0, 0, rotY, md.center.x * S[0], md.center.z * S[2]);
+    const px = x - ox;
+    const pz = z - oz;
+    const py = y - md.box.min.y * S[1];
+    const base = WorldBuilder.mat(px, py, pz, rotY, S[0], S[1], S[2]).clone();
+    for (const p of md.parts) {
+      let mat = opt.tint && opt.tint[p.mat.name] ? this.assets.tinted(p.mat, opt.tint[p.mat.name]) : p.mat;
+      if (opt.variant) mat = this.assets.variant(mat, opt.variant);
+      this.batch.addMerged(p.geo, mat, base.clone().multiply(p.matrix), opt.cast ?? true);
+    }
+    const w = md.size.x * S[0];
+    const h = md.size.y * S[1];
+    const d = md.size.z * S[2];
+    if (opt.collide !== 'none') this.physics.staticBox(x, y + h / 2, z, w / 2, h / 2, d / 2, rotY);
+    return { w, h, d };
+  }
+
+  /** 幅 w・奥行き d に収まる等倍の拡大率 */
+  fitScale(key: string, w: number, d: number) {
+    const md = this.assets.get(key);
+    if (!md) return 1;
+    return Math.min(w / md.size.x, d / md.size.z);
+  }
+
+  modelSize(key: string) {
+    return this.assets.get(key)?.size ?? null;
   }
 
   // ---------- 基本形 ----------
@@ -97,8 +141,15 @@ export class WorldBuilder {
     }
   }
 
-  /** 一戸建て。正面はローカル +z */
+  /** 一戸建て。正面はローカル +z。Kenney の住宅があればそれを使う */
   house(x: number, z: number, y: number, w: number, d: number, rotY: number, wall: THREE.ColorRepresentation, roof: THREE.ColorRepresentation, stories = 1) {
+    const variants = 'abcdefghijklmnopqrstu'.split('').map((c) => `suburban/building-type-${c}`).filter((k) => this.hasModel(k));
+    if (variants.length) {
+      const key = this.rng.pick(variants);
+      const s = this.fitScale(key, w + 1, d + 1);
+      this.model(key, x, y, z, rotY, s, { variant: this.rng.int(0, 4) });
+      return;
+    }
     const h = stories * 2.9;
     this.box('house', x, y, z, w, h, d, wall, rotY);
     this.batch.add('roof', WorldBuilder.mat(x, y + h, z, rotY, w + 0.7, 1.3 + w * 0.08, d + 0.7), roof);
@@ -111,6 +162,7 @@ export class WorldBuilder {
   // ---------- 小物 ----------
   tree(x: number, z: number, y: number, s = 1, kind: 'round' | 'pine' | 'sakura' | 'bush' = 'round') {
     const rng = this.rng;
+    if (this.kenneyTree(x, z, y, s, kind)) return;
     if (kind === 'bush') {
       this.batch.add('crown', WorldBuilder.mat(x, y, z, rng.range(0, 6), 1.4 * s, 1.0 * s, 1.4 * s), rng.pick(['#4e8a3a', '#5a9440', '#3f7a35']));
       this.physics.staticCylinder(x, y + 0.4 * s, z, 0.4 * s, 0.55 * s);
@@ -134,8 +186,38 @@ export class WorldBuilder {
     }
   }
 
+  private kenneyTree(x: number, z: number, y: number, s: number, kind: 'round' | 'pine' | 'sakura' | 'bush') {
+    const rng = this.rng;
+    const pools: Record<string, string[]> = {
+      round: ['nature/tree_default', 'nature/tree_oak', 'nature/tree_fat', 'nature/tree_detailed'],
+      sakura: ['nature/tree_default', 'nature/tree_fat'],
+      pine: ['nature/tree_pineTallA', 'nature/tree_pineRoundC'],
+      bush: ['nature/plant_bushLarge', 'nature/plant_bushDetailed'],
+    };
+    const keys = pools[kind].filter((k) => this.hasModel(k));
+    if (!keys.length) return false;
+    const key = rng.pick(keys);
+    const size = this.modelSize(key)!;
+    const targetH = (kind === 'bush' ? 1.1 : kind === 'pine' ? 7.5 : 6.2) * s * rng.range(0.85, 1.15);
+    const sc = targetH / size.y;
+    const tint = kind === 'sakura' ? { leafsGreen: rng.pick(['#f7c6d9', '#f4b6cc', '#fad3e1']) } : undefined;
+    this.model(key, x, y, z, rng.range(0, Math.PI * 2), sc, { collide: 'none', tint });
+    if (kind === 'bush') this.physics.staticCylinder(x, y + 0.4 * s, z, 0.4 * s, 0.55 * s);
+    else this.physics.staticCylinder(x, y + 1.2, z, 1.2, 0.22 * s);
+    return true;
+  }
+
   /** 街灯。腕はローカル +z 方向（道路側）へ伸びる */
   lamp(x: number, z: number, y: number, rotY: number) {
+    const lk = this.hasModel('roads/light-curved') ? 'roads/light-curved' : this.hasModel('roads/light-square') ? 'roads/light-square' : '';
+    if (lk) {
+      const sz = this.modelSize(lk)!;
+      this.model(lk, x, y, z, rotY + Math.PI, 5.6 / sz.y, { collide: 'none' });
+      this.physics.staticCylinder(x, y + 1.5, z, 1.5, 0.12);
+      const [lx, lz] = WorldBuilder.local(x, z, rotY, 0, 1.3);
+      this.box('lamp', lx, y + 5.35, lz, 0.3, 0.06, 0.5, '#fff6d8', rotY, false);
+      return;
+    }
     this.cyl(x, y, z, 0.09, 5.2, '#55585e', false);
     this.physics.staticCylinder(x, y + 1.5, z, 1.5, 0.12);
     const [ax, az] = WorldBuilder.local(x, z, rotY, 0, 0.7);

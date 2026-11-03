@@ -213,6 +213,21 @@ function itemGeometry(id: ItemId, variant: number): THREE.BufferGeometry {
   }
 }
 
+/** Kenney のモデルで置き換えるアイテム: [モデル, 一番長い辺の長さ(m)] */
+const KENNEY_ITEM: Partial<Record<ItemId, [string, number]>> = {
+  apple: ['food/apple', 0.13],
+  banana: ['food/banana', 0.22],
+  tomato: ['food/tomato', 0.11],
+  fish: ['food/fish', 0.3],
+  bread: ['food/loaf', 0.24],
+  meat: ['food/meat-raw', 0.22],
+  onigiri: ['food/rice-ball', 0.12],
+  burger: ['food/burger', 0.15],
+  icecream: ['food/ice-cream', 0.2],
+  manju: ['food/dim-sum', 0.11],
+};
+const FLOWERS = ['nature/flower_redA', 'nature/flower_purpleA', 'nature/flower_yellowA'];
+
 const geoCache = new Map<string, THREE.BufferGeometry>();
 const ITEM_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 });
 
@@ -244,7 +259,7 @@ export class WorldItem {
   origin = new THREE.Vector3();
   constructor(
     public def: ItemDef,
-    public obj: THREE.Mesh,
+    public obj: THREE.Object3D,
     public owner: Owner,
     public slot: Slot | null,
   ) {}
@@ -271,9 +286,28 @@ export class ItemSystem {
     return this.place(id, x, y, z, owner, rot, slot);
   }
 
-  private place(id: ItemId, x: number, y: number, z: number, owner: Owner, rot: number, slot: Slot | null) {
+  private makeObj(id: ItemId): THREE.Object3D {
+    const assets = this.game.assets;
+    const k = id === 'flower' ? ([rand.pick(FLOWERS), 0.28] as [string, number]) : KENNEY_ITEM[id];
+    if (k) {
+      const md = assets.get(k[0]);
+      const g = md ? assets.instance(k[0]) : null;
+      if (md && g) {
+        const s = k[1] / Math.max(md.size.x, md.size.y, md.size.z);
+        g.scale.setScalar(s);
+        g.position.y = -md.box.min.y * s;
+        const wrap = new THREE.Group();
+        wrap.add(g);
+        return wrap;
+      }
+    }
     const mesh = new THREE.Mesh(getGeometry(id, rand.int(0, 99)), ITEM_MAT);
     mesh.castShadow = true;
+    return mesh;
+  }
+
+  private place(id: ItemId, x: number, y: number, z: number, owner: Owner, rot: number, slot: Slot | null) {
+    const mesh = this.makeObj(id);
     mesh.position.set(x, y, z);
     mesh.rotation.y = rot;
     this.root.add(mesh);

@@ -5,7 +5,8 @@ import { angleDiff, damp, rand } from '../core/Rng';
 import type { StarsHandle } from '../fx/Effects';
 import type { ItemId } from '../gameplay/Items';
 import type { NavNode } from '../world/Navigation';
-import { HumanModel, type HumanKind, type HumanMode } from './Human';
+import type { HumanKind, HumanMode } from './Human';
+import type { HumanLike } from './KenneyHuman';
 
 export type NPCState = 'walk' | 'idle' | 'startle' | 'flee' | 'attack' | 'faint' | 'getup' | 'dead' | 'return' | 'chase';
 
@@ -35,7 +36,7 @@ let nextId = 1;
 
 export class NPC {
   id = nextId++;
-  model: HumanModel;
+  model: HumanLike;
   pos = new THREE.Vector3();
   yaw = 0;
   state: NPCState = 'walk';
@@ -68,7 +69,7 @@ export class NPC {
   constructor(
     private game: Game,
     public kind: HumanKind,
-    model: HumanModel,
+    model: HumanLike,
     x: number,
     y: number,
     z: number,

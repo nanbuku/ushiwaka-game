@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Assets } from '../assets/Assets';
 import { Effects } from '../fx/Effects';
 import { Capture } from '../gameplay/Capture';
 import { Heat } from '../gameplay/Heat';
@@ -40,6 +41,7 @@ export class Game {
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
   physics = new Physics();
+  assets = new Assets();
   input: Input;
   audio = new AudioSys();
   events = new EventBus();
@@ -86,6 +88,11 @@ export class Game {
     this.hud.setLoading('街をつくっています…');
     await new Promise((r) => setTimeout(r, 30));
     await this.physics.init();
+    if (!new URLSearchParams(location.search).has('noassets')) {
+      await this.assets.load((d, t) => this.hud.setLoading(`素材を読み込んでいます… ${Math.round((d / t) * 100)}%`));
+    }
+    this.hud.setLoading('街をつくっています…');
+    await new Promise((r) => setTimeout(r, 20));
     this.sky = new SkySystem(this.scene);
     this.fx = new Effects(this);
     this.items = new ItemSystem(this);

@@ -20,7 +20,7 @@
 | 昼夜 | 見た目のみ変化（ゲーム内容は同じ） |
 | 対象 | PC（キーボード＋マウス）、ローカルで遊ぶ |
 | 飛行機 | なし |
-| グラフィック | 方針B（無料素材 Kenney を使う）。素材サイトが使えるまではコードで作った見た目で進める |
+| グラフィック | 方針B（無料素材 Kenney を使う）。元の ZIP は assets-src/kenney、ゲームで使うファイルは public/models |
 | GTA・どうぶつの森 | 雰囲気の参考のみ。UI・名前・地図・音楽は独自 |
 
 ## 悪行ポイント
@@ -44,7 +44,8 @@ src/
   core/      Game（メインループ）, Physics（Rapier）, Input, Audio（効果音を合成）, Events, Rng
   world/     Layout（地区・道路・区画）, World, districts（各地区の建物）, Builder, Batcher, Kit（素材/マテリアル）, Sky（昼夜）, Navigation（歩行者経路）
   player/    Ushiwaka（操作）, DogModel（見た目・アニメ）, Fur（もふもふシェーダー）, CameraRig
-  npc/       Human（人のモデル）, NPC（AI）, NPCManager（出現・消去）
+  npc/       KenneyHuman（Kenney の人・服の色の塗り替え）, Human（予備のコード製の人）, NPC（AI）, NPCManager（出現・消去）
+  assets/    Assets（Kenney モデル・キャラクターの読み込み、色違いテクスチャ）
   gameplay/  Items（拾える物）, Karma（幸福度・悪行・悪魔度・セーブ）, Nanku（なんく）, NankuLines（セリフ）
   fx/        Effects（血・衝撃波・星・水しぶき）
   ui/        HUD, Dialogue
@@ -65,7 +66,7 @@ src/
 - [x] 通報レベルと保健所（目撃者が通報 → 保健所の職員が網で追ってくる → 捕まると檻へ → なんくがお迎え）
 - [x] なんくのおつかい（依頼）システム、悪魔モード用の依頼（全15種）
 - [x] なんくの家の中（リビング・寝室・テレビのニュースがうしわかの悪事を報道）
-- [ ] Kenney 素材への差し替え（建物・家具・車・人）※ kenney.nl がネットワーク設定で未許可
+- [x] Kenney 素材への差し替え（住宅・ビル・木・街灯・信号機・車・家具・食べ物・人のキャラクター）
 
 ### フェーズ3: 乗り物
 - [x] 車・タクシー・バン・軽トラ・スクーター・保健所の車を運転（F で乗り降り、運転手を追い出してカージャック）

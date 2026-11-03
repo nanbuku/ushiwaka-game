@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import { G, groups, quatY, RAPIER } from '../core/Physics';
 import { clamp, damp } from '../core/Rng';
-import { SPECS, VehicleModel, type VehicleKind, type VehicleSpec } from './VehicleModel';
+import { VehicleModel, type VehicleKind, type VehicleSpec } from './VehicleModel';
 
 export interface Lane {
   id: number;
@@ -73,8 +73,8 @@ export class Vehicle {
     z: number,
     yaw: number,
   ) {
-    this.spec = SPECS[kind];
-    this.model = new VehicleModel(kind);
+    this.model = new VehicleModel(kind, Math.random(), game.assets);
+    this.spec = this.model.spec;
     this.pos.set(x, y, z);
     this.yaw = yaw;
     const w = game.physics.world;

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Assets } from '../assets/Assets';
 import { colorMat } from '../npc/Human';
 import { makeSign } from '../world/Kit';
 
@@ -42,7 +43,16 @@ const tireMat = new THREE.MeshStandardMaterial({ color: '#161616', roughness: 0.
 const rimMat = new THREE.MeshStandardMaterial({ color: '#c8c8c8', roughness: 0.3, metalness: 0.8 });
 const wheelGeo = new THREE.CylinderGeometry(1, 1, 1, 14).rotateZ(Math.PI / 2);
 
-/** コードで組み立てる乗り物の見た目。前はローカル +z */
+const KENNEY: Partial<Record<VehicleKind, string[]>> = {
+  sedan: ['cars/sedan', 'cars/suv', 'cars/sedan'],
+  taxi: ['cars/taxi'],
+  van: ['cars/van', 'cars/delivery'],
+  truck: ['cars/truck'],
+  catcherVan: ['cars/ambulance'],
+};
+const KSCALE = 1.35;
+
+/** 乗り物の見た目。Kenney の車があればそれを使い、なければコードで組み立てる。前はローカル +z */
 export class VehicleModel {
   root = new THREE.Group();
   body = new THREE.Group();
@@ -50,8 +60,16 @@ export class VehicleModel {
   frontWheels: THREE.Group[] = [];
   seat = new THREE.Object3D();
   color: string;
+  spec: VehicleSpec;
 
-  constructor(public kind: VehicleKind, colorSeed = Math.random()) {
+  constructor(public kind: VehicleKind, colorSeed = Math.random(), assets?: Assets) {
+    this.spec = SPECS[kind];
+    const keys = (KENNEY[kind] ?? []).filter((k) => assets?.get(k));
+    if (assets && keys.length) {
+      this.color = '#ffffff';
+      this.buildKenney(assets, keys[Math.floor(colorSeed * keys.length)]);
+      return;
+    }
     const s = SPECS[kind];
     this.root.add(this.body);
     this.color = kind === 'taxi' ? '#f2b705' : kind === 'catcherVan' ? '#f4f4f0' : CAR_COLORS[Math.floor(colorSeed * CAR_COLORS.length)];
@@ -148,11 +166,65 @@ export class VehicleModel {
     this.body.add(this.seat);
   }
 
+  private buildKenney(assets: Assets, key: string) {
+    const md = assets.get(key)!;
+    const k = KSCALE;
+    const inner = new THREE.Group();
+    inner.scale.setScalar(k);
+    this.root.add(this.body);
+    this.body.add(inner);
+    let wheelR = 0.33;
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+    for (const p of md.parts) {
+      const mesh = new THREE.Mesh(p.geo, p.mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      if (p.name.startsWith('wheel')) {
+        p.matrix.decompose(pos, quat, scl);
+        p.geo.computeBoundingBox();
+        const bb = p.geo.boundingBox!;
+        const c = bb.getCenter(new THREE.Vector3()).multiply(scl).applyQuaternion(quat);
+        wheelR = ((bb.max.y - bb.min.y) * scl.y * k) / 2;
+        const pivot = new THREE.Group();
+        pivot.position.copy(pos).add(c);
+        const spin = new THREE.Group();
+        mesh.quaternion.copy(quat);
+        mesh.scale.copy(scl);
+        mesh.position.copy(c).negate();
+        spin.add(mesh);
+        pivot.add(spin);
+        inner.add(pivot);
+        this.wheels.push(pivot);
+        if (pos.z > 0) this.frontWheels.push(pivot);
+      } else {
+        mesh.applyMatrix4(p.matrix);
+        inner.add(mesh);
+      }
+    }
+    const base = SPECS[this.kind];
+    const halfW = (md.size.x * k) / 2;
+    const halfL = (md.size.z * k) / 2;
+    const height = md.size.y * k;
+    this.spec = { ...base, halfW, halfL, height, wheelR, seat: [-halfW * 0.32, height * 0.36, halfL * 0.02] };
+    this.seat.position.set(...this.spec.seat);
+    this.root.add(this.seat);
+    if (this.kind === 'catcherVan') {
+      for (const sx of [-1, 1]) {
+        const sign = makeSign('保健所', 1.5, 0.38, '#f4f4f0', '#2e7d32');
+        sign.position.set(sx * (halfW + 0.03), height * 0.5, -halfL * 0.2);
+        sign.rotation.y = (sx * Math.PI) / 2;
+        this.root.add(sign);
+      }
+    }
+  }
+
   animate(speed: number, steer: number, dt: number, lean = 0) {
-    const r = SPECS[this.kind].wheelR;
-    for (const w of this.wheels) w.children[0].rotation.x += (speed / r) * dt;
+    const r = this.spec.wheelR;
+    for (const w of this.wheels) w.children[0].rotation.x += (speed / Math.max(r, 0.1)) * dt;
     for (const w of this.frontWheels) w.rotation.y = steer;
     this.body.rotation.z = lean;
-    for (const w of this.wheels) w.rotation.z = lean;
+    if (this.spec.bike) for (const w of this.wheels) w.rotation.z = lean;
   }
 }

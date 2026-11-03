@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import { G, groups, RAPIER } from '../core/Physics';
 import { angleDiff, damp, rand } from '../core/Rng';
-import { HumanModel, type HumanLook } from '../npc/Human';
+import type { HumanLook } from '../npc/Human';
+import { createHuman, type HumanLike } from '../npc/KenneyHuman';
 import { inRect } from '../world/Layout';
 import * as L from './NankuLines';
 
@@ -30,7 +31,7 @@ const DEVIL_LOOK: HumanLook = {
 
 /** 飼い主のなんく（25歳）。うしわかの帰りを家の前で待っている */
 export class Nanku {
-  model: HumanModel;
+  model: HumanLike;
   pos = new THREE.Vector3();
   yaw = 0;
   private baseYaw = 0;
@@ -44,7 +45,7 @@ export class Nanku {
     const w = game.world;
     this.pos.copy(w.nankuSpot);
     this.yaw = this.baseYaw = w.nankuYaw;
-    this.model = new HumanModel(NORMAL_LOOK);
+    this.model = createHuman(game.assets, NORMAL_LOOK, 'nanku', 0.99);
     game.scene.add(this.model.root);
     const body = game.physics.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(this.pos.x, this.pos.y + 0.8, this.pos.z));
     game.physics.world.createCollider(RAPIER.ColliderDesc.capsule(0.55, 0.24).setCollisionGroups(groups(G.NPC, G.PLAYER | G.ITEM)), body);
@@ -91,14 +92,14 @@ export class Nanku {
     const g = this.game;
     this.devilShown = this.devil;
     g.scene.remove(this.model.root);
-    this.model = new HumanModel(this.devil ? DEVIL_LOOK : NORMAL_LOOK);
+    this.model = createHuman(g.assets, this.devil ? DEVIL_LOOK : NORMAL_LOOK, 'nanku', 0.99);
     g.scene.add(this.model.root);
     if (this.devil) {
       this.horns = new THREE.Group();
       const hornMat = new THREE.MeshStandardMaterial({ color: '#c1121f', emissive: '#5a0010', emissiveIntensity: 0.6, roughness: 0.4 });
       for (const sx of [-1, 1]) {
         const h = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.12, 8), hornMat);
-        h.position.set(sx * 0.07, 0.22, 0.02);
+        h.position.set(sx * (g.assets.character ? 0.11 : 0.07), g.assets.character ? 0.36 : 0.22, 0.02);
         h.rotation.z = -sx * 0.35;
         this.horns.add(h);
       }
