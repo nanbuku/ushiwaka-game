@@ -51,10 +51,10 @@ export function furMaterial(color: THREE.ColorRepresentation, furLen: number, sh
           vec3 cell = floor(vFurPos);
           vec3 lp = fract(vFurPos) - 0.5;
           float h = furHash(cell);
-          float len = 0.3 + 0.7 * h;
+          float len = 0.55 + 0.45 * h;
           if (vShell > len) discard;
           float r = length(lp);
-          if (r > (1.0 - vShell / len) * 0.64 + 0.1) discard;
+          if (r > (1.0 - vShell / len * 0.65) * 0.6 + 0.14) discard;
         }
         diffuseColor.rgb *= mix(0.74, 1.08, vShell);`,
       );
