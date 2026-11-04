@@ -22,6 +22,7 @@ export class HUD {
   private evilFill!: HTMLDivElement;
   private evilValue!: HTMLSpanElement;
   private hpFill!: HTMLDivElement;
+  private storyEl!: HTMLDivElement;
   private heatLabel!: HTMLSpanElement;
   private armorFill!: HTMLDivElement;
   private clock!: HTMLDivElement;
@@ -63,6 +64,7 @@ export class HUD {
       </div>
       <div class="panel status"><div class="clock">09:00</div><div class="place">ひだまり町</div><div class="heat"><span class="heat-label">保健所</span><span class="heat-icons"></span></div></div>
       <div class="panel request hidden"></div>
+      <div class="panel story hidden"></div>
       <div class="capture"><div class="capture-label">つかまりそう！ 走って逃げろ！</div><div class="capture-bar"><div></div></div></div>
       <div class="prompt"></div>
       <div class="speedo hidden"></div>
@@ -84,6 +86,7 @@ export class HUD {
     this.evilFill = q('.bar.evil > div');
     this.evilValue = q('.ev');
     this.hpFill = q('.bar.hp > div');
+    this.storyEl = q('.panel.story');
     this.heatLabel = q('.heat-label') as unknown as HTMLSpanElement;
     this.armorFill = q('.bar.armor > div');
     this.clock = q('.clock');
@@ -445,7 +448,7 @@ export class HUD {
     // おつかい（目的地の方向と距離）
     const rl = g.requests.label;
     this.request.classList.toggle('hidden', !rl);
-    const gb = g.guide.best;
+    const gb = g.guide.source === 'request' ? g.guide.best : null;
     const nav = gb
       ? `<div class="nav"><i style="transform: rotate(${g.guide.arrowAngle()}rad)">▲</i> ${gb.label}　<b>${Math.round(gb.dist)}m</b></div>`
       : g.guide.note
@@ -454,6 +457,16 @@ export class HUD {
     const rt = rl ? `<b>おつかい</b>　${rl}${nav}` : '';
     if (this.request.innerHTML !== rt) this.request.innerHTML = rt;
     this.request.classList.toggle('done', g.requests.complete);
+    // メインストーリー
+    const sh = g.story.hud;
+    this.storyEl.classList.toggle('hidden', !sh);
+    if (sh) {
+      const sb = g.guide.source === 'story' ? g.guide.best : null;
+      const snav = sb ? `<div class="nav"><i style="transform: rotate(${g.guide.arrowAngle()}rad)">▲</i> ${sb.label}　<b>${Math.round(sb.dist)}m</b></div>` : '';
+      const boss = sh.boss ? `<div class="st-boss"><span>${sh.boss.name}</span><div><i style="width:${Math.max(0, (sh.boss.hp / sh.boss.max) * 100).toFixed(1)}%"></i></div></div>` : '';
+      const html = `<div class="st-title">${sh.title}</div><div class="st-goal">${sh.text}</div>${snav}${boss}`;
+      if (this.storyEl.innerHTML !== html) this.storyEl.innerHTML = html;
+    }
     // 武器
     const wh = g.weapons.hud;
     const wt = `<div class="w-cur">${wh.name} <span>${wh.ammo === '∞' ? '' : '×' + wh.ammo}</span></div>` + `<div class="w-list">${wh.owned.map((o) => `<span class="${o.id === wh.current ? 'on' : ''}">${o.key} ${o.name}${o.ammo === '∞' ? '' : ' ' + o.ammo}</span>`).join('')}</div>` + (wh.note ? `<div class="w-c4">${wh.note}</div>` : '');

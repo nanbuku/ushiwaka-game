@@ -296,6 +296,8 @@ export class Arsenal {
     };
     for (const n of g.npcs.list) if (n.alive) check(n, n.pos.clone().setY(n.pos.y + 1));
     for (const v of g.traffic.list) if (!v.wrecked && v !== g.player.driving) check(v, v.pos.clone().setY(v.pos.y + 1));
+    const k = g.story.kaiju;
+    if (k && k.alive) check(k as unknown as NPC, k.pos.clone().setY(k.pos.y + 8));
     return best;
   }
 
@@ -460,6 +462,8 @@ export class Arsenal {
     const g = this.game;
     const p = g.player;
     g.audio.play('whoosh', p.pos, 0.7);
+    const tip = p.mouthWorld().add(p.forward.multiplyScalar(0.6));
+    if (!g.story.biteAt(tip, 90)) g.destruction.hitNear(tip, 1.3, 90, true);
     const hits = this.inFront(1.9, 0.15, 2).filter((n) => n.alive);
     for (const n of hits) {
       const dir = n.pos.clone().sub(p.pos).setY(0).normalize();

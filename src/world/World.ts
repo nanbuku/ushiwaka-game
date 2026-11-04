@@ -56,6 +56,8 @@ export class World {
   waters: { x: number; z: number; rx: number; rz: number; y: number }[] = [];
   /** 屋内エリア（スーパーの中など）: 盗みの判定などに使う */
   zones: { name: string; rect: Rect }[] = [];
+  /** ストーリーで使う場所（グレイハートタワーの前庭、河川敷の工場の中庭など） */
+  landmarks: Record<string, THREE.Vector3> = {};
 
   constructor(public game: Game) {}
 

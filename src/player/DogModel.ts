@@ -156,6 +156,12 @@ export class DogModel {
     });
   }
 
+  /** 背中に乗せる（くまきち） */
+  addRider(o: THREE.Object3D) {
+    o.position.set(0, 0.43, -0.08);
+    this.body.add(o);
+  }
+
   update(dt: number, s: DogAnimState) {
     this.t += dt;
     const t = this.t;

@@ -20,6 +20,7 @@ import { SkySystem } from '../world/Sky';
 import { World } from '../world/World';
 import { Destruction } from '../world/Destruction';
 import { Responders } from '../gameplay/Responders';
+import { Story } from '../gameplay/Story';
 import { AudioSys } from './Audio';
 import { EventBus } from './Events';
 import { Input } from './Input';
@@ -58,6 +59,7 @@ export class Game {
   guide = new Guide(this);
   destruction!: Destruction;
   police = new Responders(this);
+  story = new Story(this);
   sky!: SkySystem;
   world!: World;
   fx!: Effects;
@@ -117,6 +119,7 @@ export class Game {
     this.npcs = new NPCManager(this);
     this.traffic = new Traffic(this);
     this.weapons.init();
+    this.story.init();
     this.dialogue = new Dialogue(this, document.body);
     this.hud.buildMap();
     this.player.teleport(this.world.spawn, this.world.spawnYaw);
@@ -150,8 +153,13 @@ export class Game {
 
   private start(fresh: boolean, skipStory = false) {
     this.audio.unlock();
-    if (fresh) Karma.clearSave();
-    else this.karma.load();
+    if (fresh) {
+      Karma.clearSave();
+      this.story.reset();
+    } else {
+      this.karma.load();
+      this.story.load();
+    }
     this.started = true;
     this.paused = false;
     this.audio.startMusic();
@@ -251,6 +259,7 @@ export class Game {
     }
     this.weapons.onExplosion(pos, R);
     this.destruction.damageArea(pos, R * 1.4, 380 * scale, true, byPlayer);
+    this.story.onExplosion(pos, R, scale, byPlayer);
     if (this.nanku.pos.distanceTo(pos) < 10) this.hud.popText(this.nanku.headPos(), this.karma.mode === 'devil' ? 'たーまやー！' : 'きゃあっ！', '#ff4d6d', 26);
     if (byPlayer) {
       this.karma.crime('bomb', pos);
@@ -299,6 +308,7 @@ export class Game {
       this.weapons.update(dt);
       this.guide.update(dt);
       this.police.update(dt);
+      this.story.update(dt);
       this.npcs.update(dt);
       this.traffic.update(dt);
       this.heat.update(dt);

@@ -487,6 +487,49 @@ body {
 .hud.ingame > .request {
   display: block;
 }
+.story {
+  position: absolute;
+  top: 132px;
+  right: 16px;
+  width: 300px;
+  font-size: 13px;
+  line-height: 1.5;
+  border-left: 3px solid #b7a8ff;
+}
+.story.hidden {
+  display: none;
+}
+.story .st-title {
+  font-weight: 700;
+  color: #d9d0ff;
+  font-size: 12px;
+}
+.story .st-goal {
+  font-size: 14px;
+  font-weight: 600;
+}
+.story .nav i {
+  display: inline-block;
+  font-style: normal;
+  color: #ffd23f;
+}
+.story .st-boss {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #ffb3b3;
+}
+.story .st-boss > div {
+  height: 7px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+.story .st-boss i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #ff5d5d, #b7a8ff);
+}
 .hud.ingame > .request.hidden {
   display: none;
 }

@@ -20,6 +20,8 @@ export interface Destructible {
   handles: DrawHandle[];
   colliders: RAPIER.Collider[];
   alive: boolean;
+  /** ストーリーの目標など（'drain' / 'cage' / 'engine'） */
+  tag?: string;
 }
 
 const HP: Record<DestKind, number> = { house: 260, building: 750, tower: 2600, tree: 35, lamp: 22, pole: 45, prop: 30 };
@@ -79,12 +81,15 @@ export class Destruction {
     this.cur = { id: this.list.length, kind, x, y, z, w, d, h, hp: HP[kind], color, handles: [], colliders: [], alive: true };
   }
 
-  end() {
+  /** 壊れたときに呼ばれる（ストーリーの目標の判定など） */
+  onDestroyed?: (o: Destructible) => void;
+
+  end(): Destructible | null {
     this.depth = Math.max(0, this.depth - 1);
-    if (this.depth > 0 || !this.cur) return;
+    if (this.depth > 0 || !this.cur) return null;
     const o = this.cur;
     this.cur = null;
-    if (!o.handles.length) return;
+    if (!o.handles.length) return null;
     this.list.push(o);
     const r = Math.max(o.w, o.d) / 2;
     for (let cx = Math.floor((o.x - r) / CELL); cx <= Math.floor((o.x + r) / CELL); cx++) {
@@ -96,6 +101,26 @@ export class Destruction {
       }
     }
     for (const c of o.colliders) this.byCol.set(c.handle, o);
+    return o;
+  }
+
+  /** 噛みつき・バットなど、すぐそばの物を叩く。当たったら true */
+  hitNear(pos: THREE.Vector3, r: number, dmg: number, byPlayer: boolean) {
+    let best: Destructible | null = null;
+    let bd = r;
+    for (const o of this.near(pos.x, pos.z, r)) {
+      if (o.kind === 'house' || o.kind === 'building' || o.kind === 'tower') continue;
+      const d = Math.hypot(o.x - pos.x, o.z - pos.z) - Math.max(o.w, o.d) / 2;
+      if (d < bd) {
+        bd = d;
+        best = o;
+      }
+    }
+    if (!best) return false;
+    this.game.fx.sparks(pos);
+    this.game.audio.play('kick', pos, 0.7);
+    this.damage(best, dmg, this.game.player.pos, true, byPlayer);
+    return true;
   }
 
   addHandle(h: DrawHandle) {
@@ -165,6 +190,7 @@ export class Destruction {
     if (!o.alive) return;
     const g = this.game;
     o.alive = false;
+    this.onDestroyed?.(o);
     const isBld = o.kind === 'house' || o.kind === 'building' || o.kind === 'tower';
     if (byPlayer && isBld) {
       this.wreckN++;

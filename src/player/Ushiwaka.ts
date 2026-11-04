@@ -390,6 +390,8 @@ export class Ushiwaka {
         return;
       }
     }
+    // 物（ドレインライトや街灯など）に噛みつく
+    if (g.story.biteAt(this.mouthWorld(), 30) || g.destruction.hitNear(this.mouthWorld(), 0.9, 30, true)) return;
     g.audio.play('chomp', this.pos, 0.5);
   }
 

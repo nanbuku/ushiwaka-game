@@ -10,8 +10,8 @@ import type { HumanLike } from './KenneyHuman';
 
 export type NPCState = 'walk' | 'idle' | 'startle' | 'flee' | 'attack' | 'faint' | 'getup' | 'dead' | 'return' | 'chase' | 'armed';
 
-const FAINT_BASE: Record<HumanKind, number> = { man: 0.3, woman: 0.38, child: 0.5, elderly: 0.72, office: 0.32, clerk: 0.32, catcher: 0.18, police: 0.12, swat: 0.05, soldier: 0.04 };
-const HP: Record<HumanKind, number> = { man: 100, woman: 85, child: 55, elderly: 65, office: 95, clerk: 90, catcher: 120, police: 130, swat: 210, soldier: 190 };
+const FAINT_BASE: Record<HumanKind, number> = { man: 0.3, woman: 0.38, child: 0.5, elderly: 0.72, office: 0.32, clerk: 0.32, catcher: 0.18, police: 0.12, swat: 0.05, soldier: 0.04, agent: 0.08 };
+const HP: Record<HumanKind, number> = { man: 100, woman: 85, child: 55, elderly: 65, office: 95, clerk: 90, catcher: 120, police: 130, swat: 210, soldier: 190, agent: 120 };
 const SCREAM: Record<HumanKind, 'scream_m' | 'scream_f' | 'scream_child' | 'scream_old'> = {
   man: 'scream_m',
   woman: 'scream_f',
@@ -23,6 +23,7 @@ const SCREAM: Record<HumanKind, 'scream_m' | 'scream_f' | 'scream_child' | 'scre
   police: 'scream_m',
   swat: 'scream_m',
   soldier: 'scream_m',
+  agent: 'scream_m',
 };
 const OUCH: Record<HumanKind, string[]> = {
   man: ['いってぇ!', 'うわっ!', 'なんだこの犬!'],
@@ -35,6 +36,7 @@ const OUCH: Record<HumanKind, string[]> = {
   police: ['ぐっ!', '応援を頼む!', 'この犬…!'],
   swat: ['被弾した!', 'まだやれる!', '援護しろ!'],
   soldier: ['くっ!', '衛生兵!', '撃て、撃て!'],
+  agent: ['ぐっ…!', 'グレイハートに栄光を…', 'しぶとい犬め!'],
 };
 const DROPS: ItemId[] = ['wallet', 'phone', 'burger', 'onigiri', 'wallet'];
 
@@ -80,6 +82,10 @@ export class NPC {
   private speedNow = 0;
   private idleTimer = rand.range(10, 30);
   private kickT = 9;
+  /** ストーリーの敵：通報レベルに関係なく戦い続ける */
+  forceArmed = false;
+  /** ボスの名前（HUD に体力を出す） */
+  bossName = '';
 
   constructor(
     private game: Game,
@@ -135,7 +141,7 @@ export class NPC {
     switch (this.state) {
       case 'armed': {
         const r = g.police.minLevel(this.kind);
-        if (g.heat.level < r) {
+        if (g.heat.level < r && !this.forceArmed) {
           this.state = 'walk';
           break;
         }

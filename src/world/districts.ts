@@ -639,6 +639,18 @@ function buildCity(w: World, lot: Lot) {
   } else if (lot.cx0 === 200 && lot.cz0 === -100) {
     plaza(w, lot, inner, true);
     weapon(w, 'c4', (inner.x0 + inner.x1) / 2 + 6, lot.y, (inner.z0 + inner.z1) / 2);
+  } else if (!w.landmarks.tower) {
+    // 株式会社グレイハートの本社〈グレイハートタワー〉と前庭
+    const cx = (inner.x0 + inner.x1) / 2;
+    const W = inner.x1 - inner.x0 - 8;
+    const D = (inner.z1 - inner.z0) * 0.55;
+    const tz = inner.z0 + D / 2 + 1;
+    b.building(cx, tz, lot.y, W, D, 125, '#4d535c', 0, 'office');
+    b.sign('GRAY HEART', cx, lot.y + 108, tz + D / 2 + 0.06, 0, W * 0.7, 4, '#2a2d33', '#d8d8e0', true);
+    b.sign('株式会社グレイハート', cx, lot.y + 6, tz + D / 2 + 0.06, 0, 12, 1.6, '#3a3d44', '#ffffff', true);
+    const fz0 = tz + D / 2;
+    b.flat('ground', cx, lot.y + 0.008, (fz0 + inner.z1) / 2, W, inner.z1 - fz0, '#b9b6b0');
+    w.landmarks.tower = new THREE.Vector3(cx, lot.y, (fz0 + inner.z1) / 2);
   } else if (rng.chance(0.5)) {
     plaza(w, lot, inner, true);
   } else {
@@ -802,6 +814,7 @@ function buildRiverside(w: World, lot: Lot) {
       weapon(w, 'nuke', a.x0 + 46, y, cz + 18);
       weapon(w, 'vest', a.x0 + 52, y, cz + 18);
       vehicle(w, a.x0 + 60, y, cz + 11, Math.PI / 2, 'tank');
+      w.landmarks.factory = new THREE.Vector3(a.x0 + 40, y, cz + 12);
     }
   }
 }

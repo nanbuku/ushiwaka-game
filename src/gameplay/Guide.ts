@@ -30,6 +30,8 @@ export class Guide {
   /** 一番近い目的地 */
   best: (Target & { dist: number }) | null = null;
   note = '';
+  /** 今の案内がメインストーリーか、おつかいか */
+  source: 'story' | 'request' = 'request';
   private marker = new THREE.Group();
   private t = 0;
   private refresh = 0;
@@ -52,6 +54,13 @@ export class Guide {
   /** 今のおつかいの目的地を探す */
   private compute(): Target[] {
     const g = this.game;
+    const st = g.story.guideTargets();
+    if (st.length) {
+      this.source = 'story';
+      this.note = '';
+      return st;
+    }
+    this.source = 'request';
     const r = g.requests;
     const c = r.current;
     this.note = '';

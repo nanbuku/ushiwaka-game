@@ -9,13 +9,13 @@ import type { VehicleKind } from '../vehicles/VehicleModel';
 import { castShot } from './Guns';
 
 /** その隊が出てくる通報レベル */
-const MIN_LEVEL: Partial<Record<HumanKind, number>> = { police: 2, swat: 4, soldier: 5 };
+const MIN_LEVEL: Partial<Record<HumanKind, number>> = { police: 2, swat: 4, soldier: 5, agent: 0 };
 /** 通報レベルごとの、歩いて来る隊員の数 */
 const WANT_FOOT: Partial<Record<HumanKind, number>>[] = [{}, {}, { police: 2 }, { police: 3 }, { police: 2, swat: 4 }, { swat: 2, soldier: 5 }];
 /** 通報レベルごとの、追ってくる車（種類・乗っている隊・人数） */
 const WANT_CARS: [VehicleKind, HumanKind, number][][] = [[], [], [], [['police', 'police', 2], ['police', 'police', 2]], [['police', 'police', 2], ['van', 'swat', 3]], [['tank', 'soldier', 0], ['van', 'soldier', 3]]];
-const DMG: Partial<Record<HumanKind, number>> = { police: 8, swat: 7, soldier: 11 };
-const RANGE: Partial<Record<HumanKind, number>> = { police: 35, swat: 50, soldier: 70 };
+const DMG: Partial<Record<HumanKind, number>> = { police: 8, swat: 7, soldier: 11, agent: 7 };
+const RANGE: Partial<Record<HumanKind, number>> = { police: 35, swat: 50, soldier: 70, agent: 40 };
 export const FORCE_NAME = ['保健所', '保健所', '警察', '警察', 'SWAT', '防衛隊'];
 
 interface Pursuer {
@@ -50,6 +50,8 @@ interface Shell {
  */
 export class Responders {
   cars: Pursuer[] = [];
+  /** ストーリーのボス戦車（通報レベルに関係なく攻めてくる） */
+  bosses: Pursuer[] = [];
   private st = new Map<NPC, Combat>();
   private shells: Shell[] = [];
   private footT = 0;
@@ -90,6 +92,7 @@ export class Responders {
     const g = this.game;
     const c = this.combat(n);
     c.cd -= dt;
+    if (g.dialogue.active) return;
     if (!sees) {
       c.spotT = Math.max(0, c.spotT - dt);
       return;
@@ -103,7 +106,7 @@ export class Responders {
     }
     if (c.cd > 0 || dist > (RANGE[n.kind] ?? 30)) return;
     this.fire(n, dist);
-    if (n.kind === 'swat') {
+    if (n.kind === 'swat' || n.bossName) {
       if (c.burst > 0) {
         c.burst--;
         c.cd = 0.11;
@@ -112,7 +115,7 @@ export class Responders {
         c.cd = rand.range(1.0, 1.5);
       }
     } else c.cd = n.kind === 'soldier' ? rand.range(0.8, 1.2) : rand.range(1.1, 1.8);
-    if (rand.chance(0.15)) g.hud.popText(n.headPos(), rand.pick(n.kind === 'police' ? ['発砲許可!', '応援を!'] : n.kind === 'swat' ? ['制圧しろ!', '撃て!', '包囲しろ!'] : ['目標を排除せよ!', '撃てー!', '前進!']), '#ffffff', 18);
+    if (rand.chance(0.15)) g.hud.popText(n.headPos(), rand.pick(n.kind === 'police' ? ['発砲許可!', '応援を!'] : n.kind === 'swat' ? ['制圧しろ!', '撃て!', '包囲しろ!'] : n.kind === 'agent' ? ['白い犬を確保しろ!', '社長の命令だ!', '逃がすな!'] : ['目標を排除せよ!', '撃てー!', '前進!']), '#ffffff', 18);
   }
 
   /** 1発撃つ。命中率は距離と、うしわかの速さで下がる */
@@ -133,7 +136,7 @@ export class Responders {
     const hit = castShot(g, from, dir, (RANGE[n.kind] ?? 30) + 15, { hitPlayer: true, npcFilter: (o) => !ARMED.includes(o.kind) && o !== n });
     g.weapons.tracers.add(from.clone().addScaledVector(dir, 0.5), hit.point, '#ffcf8a');
     g.audio.play('gun', n.pos, 0.7, n.kind === 'police' ? 1.1 : 0.9);
-    const dmg = DMG[n.kind] ?? 8;
+    const dmg = (DMG[n.kind] ?? 8) * (n.bossName ? 1.7 : 1);
     if (hit.player) p.hurt(dmg, n.pos);
     else if (hit.vehicle) {
       hit.vehicle.hp -= dmg * (hit.vehicle.kind === 'tank' ? 0.03 : 0.35);
@@ -155,6 +158,8 @@ export class Responders {
     }
     for (const [n] of this.st) if (!n.alive) this.st.delete(n);
     this.updateShells(dt);
+    this.bosses = this.bosses.filter((c) => !c.v.dead && !c.v.charred);
+    if (!g.player.dead) for (const c of this.bosses) this.drivePursuer(c, dt);
     if (g.capture.active || g.player.dead) return;
     // 歩いて来る隊員
     this.footT -= dt;
@@ -187,6 +192,21 @@ export class Responders {
       }
     }
     for (const c of this.cars) this.drivePursuer(c, dt);
+  }
+
+  /** ボス戦車を登録する */
+  addBoss(v: Vehicle) {
+    v.external = true;
+    v.persistent = true;
+    this.bosses.push({ v, crew: 'agent', n: 0, stuckT: 0, revT: 0, fireCd: 3, sirenT: 0 });
+  }
+
+  /** 砲弾・ビームを撃つ（着弾すると爆発） */
+  fireShell(from: THREE.Vector3, to: THREE.Vector3, speed: number, color = '#ffd166') {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 6), new THREE.MeshBasicMaterial({ color }));
+    mesh.position.copy(from);
+    this.game.scene.add(mesh);
+    this.shells.push({ pos: from.clone(), vel: to.clone().sub(from).normalize().multiplyScalar(speed), mesh, t: 0 });
   }
 
   private spawnFoot(kind: HumanKind) {
@@ -356,6 +376,6 @@ export class Responders {
   /** 捕まった・倒れたときなど：全員引き上げる */
   reset() {
     this.releaseCars();
-    for (const n of this.game.npcs.list) if (n.state === 'armed') n.state = 'walk';
+    for (const n of this.game.npcs.list) if (n.state === 'armed' && !n.forceArmed) n.state = 'walk';
   }
 }

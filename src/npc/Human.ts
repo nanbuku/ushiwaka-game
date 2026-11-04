@@ -245,10 +245,10 @@ const PASTEL = ['#f7c5cc', '#c9e4de', '#faedcb', '#c6def1', '#dbcdf0', '#f2c6de'
 const BOTTOMS = ['#2f3b52', '#3a3a3a', '#6b5b45', '#4a5a6a', '#c2b59b', '#1f2a44'];
 const SHOES = ['#2a2a2a', '#f2f2f2', '#6b4a32', '#3b5ba5', '#a33'];
 
-export type HumanKind = 'man' | 'woman' | 'child' | 'elderly' | 'office' | 'clerk' | 'catcher' | 'police' | 'swat' | 'soldier';
+export type HumanKind = 'man' | 'woman' | 'child' | 'elderly' | 'office' | 'clerk' | 'catcher' | 'police' | 'swat' | 'soldier' | 'agent';
 
 /** 銃を持って対応する人（警察・SWAT・防衛隊） */
-export const ARMED: HumanKind[] = ['police', 'swat', 'soldier'];
+export const ARMED: HumanKind[] = ['police', 'swat', 'soldier', 'agent'];
 
 export function makeLook(kind: HumanKind, rng: Rng): HumanLook {
   const base: HumanLook = {
@@ -329,6 +329,16 @@ export function makeLook(kind: HumanKind, rng: Rng): HumanLook {
       base.hat = '#15171b';
       base.gun = 'rifle';
       base.backpack = '#2b2e35';
+      break;
+    case 'agent':
+      base.height = rng.range(1.72, 1.86);
+      base.top = '#141417';
+      base.bottom = '#141417';
+      base.shoes = '#0b0b0b';
+      base.tie = '#3a3a40';
+      base.hair = '#111111';
+      base.hairStyle = 'short';
+      base.gun = 'pistol';
       break;
     case 'soldier':
       base.height = rng.range(1.7, 1.86);

@@ -121,6 +121,7 @@ export function playerShotHit(g: Game, hit: ShotHit, dmg: number, from: THREE.Ve
     hit.vehicle.hp -= dmg * (hit.vehicle.kind === 'tank' ? 0.02 : 0.12);
     return;
   }
+  if (hit.collider && g.story.onShot(hit.collider.handle, dmg)) return;
   if (hit.collider) {
     const o = g.destruction.byCollider(hit.collider.handle);
     if (o) g.destruction.damage(o, dmg * 0.3, from, true, true);
@@ -256,6 +257,7 @@ export class Nukes {
     this.scorch.position.set(pos.x, gy + 0.09, pos.z);
     this.scorch.scale.setScalar(70);
     g.audio.play('nuke', pos, 1);
+    g.story.onNuke(pos);
     g.camRig.addShake(2.5);
     g.fx.explosion(pos.clone().setY(gy + 1), gy, 4);
     g.heat.value = 5.99;

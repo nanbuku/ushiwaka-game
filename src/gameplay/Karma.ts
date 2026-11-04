@@ -62,6 +62,11 @@ export class Karma {
 
   crime(kind: CrimeKind, pos: THREE.Vector3, detail = '', count = 1, cause: KillCause = 'bite') {
     const g = this.game;
+    // グレイハート社の黒服は悪者：倒しても悪行にならない
+    if (detail === 'agent') {
+      if (kind === 'kill') g.hud.toast('黒服を倒した！', 'good', 2);
+      return;
+    }
     g.heat.report(kind, pos, ['catcher', 'police', 'swat', 'soldier'].includes(detail));
     g.requests.onCrime(kind, detail, pos, count);
     let pts = { bite: 3, kill: 12, steal: 2, shrine: 4, faint: 1, bomb: 5, wreck: 3, shoot: 3 }[kind] * count;

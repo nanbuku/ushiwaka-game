@@ -3,7 +3,7 @@ import type { Game } from '../core/Game';
 import { rand } from '../core/Rng';
 import type { District } from '../world/Layout';
 import type { StaticSpot } from '../world/World';
-import { ARMED, makeLook, type HumanKind } from './Human';
+import { ARMED, makeLook, type HumanKind, type HumanLook } from './Human';
 import { createHuman } from './KenneyHuman';
 import { NPC } from './NPC';
 
@@ -92,8 +92,8 @@ export class NPCManager {
     }
   }
 
-  create(kind: HumanKind, x: number, y: number, z: number) {
-    const model = createHuman(this.game.assets, makeLook(kind, rand), kind);
+  create(kind: HumanKind, x: number, y: number, z: number, look?: Partial<HumanLook>) {
+    const model = createHuman(this.game.assets, { ...makeLook(kind, rand), ...look }, kind);
     const n = new NPC(this.game, kind, model, x, y, z);
     this.list.push(n);
     return n;
