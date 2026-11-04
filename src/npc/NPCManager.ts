@@ -165,12 +165,19 @@ export class NPCManager {
     this.panicAround(n.pos, res === 'kill' ? 26 : 16, n);
   }
 
-  onBark(pos: THREE.Vector3, radius: number, big: boolean) {
+  onBark(pos: THREE.Vector3, radius: number, big: boolean, mega = false) {
     let fainted = 0;
+    const g = this.game;
     for (const n of this.list) {
       const d = Math.hypot(n.pos.x - pos.x, n.pos.z - pos.z);
       if (d > radius) continue;
-      if (n.barked(d, radius, big, pos)) fainted++;
+      if (mega && big && n.kind === 'elderly' && n.alive && d < radius * 0.7) {
+        g.hud.popText(n.headPos(), 'うっ…心臓が…', '#ff4d4d', 22);
+        n.die(pos);
+        g.karma.crime('kill', n.pos, 'elderly', 1, 'shock');
+        continue;
+      }
+      if (n.barked(d, radius, big || mega, pos)) fainted++;
     }
     if (fainted) this.game.karma.crime('faint', pos, `${fainted}人`, fainted);
   }

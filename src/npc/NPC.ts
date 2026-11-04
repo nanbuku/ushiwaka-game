@@ -57,6 +57,15 @@ export class NPC {
   deadT = 0;
   stars: StarsHandle | null = null;
   private flingVel: THREE.Vector3 | null = null;
+  /** 燃えている残り秒数 */
+  burning = 0;
+  private burnByPlayer = false;
+  /** 撒菱でけがをして足が遅い残り秒数 */
+  slowT = 0;
+  private bleedT = 0;
+  private bleedByPlayer = false;
+  private screamT = 0;
+  private charred = false;
   private spin = 0;
   /** お店の人など、持ち場がある NPC */
   home: { x: number; y: number; z: number; yaw: number } | null = null;
@@ -113,6 +122,8 @@ export class NPC {
     const dog = g.player.pos;
     const dDog = Math.hypot(dog.x - this.pos.x, dog.z - this.pos.z);
     let speed = 0;
+    if (this.alive) this.statusEffects(dt);
+    if (!this.alive && this.state !== 'dead') return;
 
     if (this.kind === 'catcher' && (this.state === 'walk' || this.state === 'idle') && g.heat.level >= 1) this.state = 'chase';
     switch (this.state) {
@@ -270,8 +281,9 @@ export class NPC {
   }
 
   private moveDir(dx: number, dz: number, step: number, dt: number) {
-    this.pos.x += dx * step;
-    this.pos.z += dz * step;
+    const k = this.slowT > 0 ? 0.35 : this.burning > 0 ? 1.15 : 1;
+    this.pos.x += dx * step * k;
+    this.pos.z += dz * step * k;
     this.yaw += angleDiff(this.yaw, Math.atan2(dx, dz)) * damp(10, dt);
   }
 
@@ -430,6 +442,93 @@ export class NPC {
       this.body = null;
     }
     if (rand.chance(0.6)) this.dropItem();
+  }
+
+  // ---------- 状態異常（炎・撒菱） ----------
+  private statusEffects(dt: number) {
+    const g = this.game;
+    if (this.slowT > 0) this.slowT -= dt;
+    if (this.bleedT > 0) {
+      this.bleedT -= dt;
+      this.hp -= dt * 2.5;
+      if (Math.random() < dt * 5) g.fx.bloodDrip(this.pos);
+      if (this.hp <= 0) {
+        this.die(this.pos);
+        if (this.bleedByPlayer) g.karma.crime('kill', this.pos, this.kind, 1, 'spikes');
+        return;
+      }
+    }
+    if (this.burning > 0) {
+      this.burning -= dt;
+      this.hp -= dt * 17;
+      if (Math.random() < dt * 30) g.fx.flame(this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.4, Math.random() * this.height, (Math.random() - 0.5) * 0.4)), 1);
+      this.screamT -= dt;
+      if (this.screamT < 0 && this.conscious) {
+        this.screamT = rand.range(1.2, 2.2);
+        g.audio.play(SCREAM[this.kind], this.pos, 0.8, 1.15);
+        g.hud.popText(this.headPos(), rand.pick(['あちちちっ!', '熱いーっ!', '火がっ!', 'ぎゃあああ!']), '#ffb703', 22);
+      }
+      if (this.conscious && this.state !== 'flee') {
+        this.state = 'flee';
+        this.calm = 0;
+      }
+      if (this.conscious) this.fleeFrom.set(this.pos.x + (Math.random() - 0.5) * 20, 0, this.pos.z + (Math.random() - 0.5) * 20);
+      // 近くの人に燃え移る
+      for (const o of g.npcs.list) {
+        if (o === this || !o.alive || o.burning > 0) continue;
+        if (Math.hypot(o.pos.x - this.pos.x, o.pos.z - this.pos.z) < 1.0) o.ignite(this.burnByPlayer);
+      }
+      if (this.hp <= 0) {
+        this.burning = 0;
+        this.char();
+        this.die(this.pos);
+        if (this.burnByPlayer) g.karma.crime('kill', this.pos, this.kind, 1, 'fire');
+        return;
+      }
+    }
+  }
+
+  /** 火がつく */
+  ignite(byPlayer: boolean) {
+    if (!this.alive || this.burning > 0) return;
+    this.burning = rand.range(5, 8);
+    this.burnByPlayer = byPlayer;
+    this.screamT = 0;
+    if (this.state === 'faint') this.state = 'getup';
+  }
+
+  /** 撒菱を踏んだ。0=何もなし 1=けが 2=死亡 */
+  stepOnSpikes(byPlayer: boolean): 0 | 1 | 2 {
+    const g = this.game;
+    if (!this.alive || this.slowT > 6) return 0;
+    this.hp -= 22;
+    this.slowT = 10;
+    this.bleedT = 6;
+    this.bleedByPlayer = byPlayer;
+    g.audio.play(SCREAM[this.kind], this.pos, 0.7, 1.2);
+    g.hud.popText(this.headPos(), rand.pick(['いったぁ!!', '足がっ!', 'なにか刺さった!', 'ぎゃっ!']), '#ffffff', 22);
+    g.fx.bloodSpray(this.pos.clone().setY(this.pos.y + 0.1), new THREE.Vector3(0, 0, 0), 8, this.pos.y);
+    if (this.hp <= 0) {
+      this.die(this.pos);
+      return 2;
+    }
+    if (this.kind !== 'catcher' && rand.chance(0.35)) this.faint();
+    else if (this.conscious && this.state !== 'chase') this.scare(this.pos.clone().add(new THREE.Vector3(1, 0, 0)), 0.2);
+    return 1;
+  }
+
+  /** 黒こげにする */
+  char() {
+    if (this.charred) return;
+    this.charred = true;
+    this.model.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const mat = (m.material as THREE.MeshStandardMaterial).clone();
+      mat.color = new THREE.Color('#2a2420');
+      mat.map = null;
+      m.material = mat;
+    });
   }
 
   /** 車や爆風で吹っ飛ばされて死ぬ */

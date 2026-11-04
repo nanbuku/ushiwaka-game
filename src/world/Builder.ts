@@ -11,7 +11,7 @@ const _s = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const UP = new THREE.Vector3(0, 1, 0);
 
-export type BoxKey = 'plain' | 'office' | 'house' | 'shop' | 'lamp' | 'neon' | 'glass';
+export type BoxKey = 'plain' | 'office' | 'house' | 'shop' | 'lamp' | 'neon' | 'glass' | 'slab';
 
 /** 街のパーツを置くための道具箱。すべての物体はバッチ描画＋静的コライダーで作る */
 export class WorldBuilder {
@@ -22,6 +22,7 @@ export class WorldBuilder {
   constructor(public physics: Physics, public rng: Rng, public assets: Assets) {
     const b = this.batch;
     b.define('plain', GEO.box, MAT.plain);
+    b.define('slab', GEO.box, MAT.slab, false, true);
     b.define('office', GEO.box, MAT.office);
     b.define('house', GEO.box, MAT.house);
     b.define('shop', GEO.box, MAT.shop);

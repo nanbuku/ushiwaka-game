@@ -116,6 +116,58 @@ function facade(kind: FacadeKind) {
   return m;
 }
 
+const NOISE_GLSL = `
+  float gh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float gn(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(gh(i), gh(i + vec2(1.0, 0.0)), u.x), mix(gh(i + vec2(0.0, 1.0)), gh(i + vec2(1.0, 1.0)), u.x), u.y); }
+  float fbm(vec2 p){ float v = 0.0; float a = 0.5; for (int k = 0; k < 4; k++) { v += a * gn(p); p *= 2.03; a *= 0.5; } return v; }
+`;
+
+/**
+ * 平らな色だけの地面はゲームっぽく見えるので、ワールド座標のノイズで
+ * 汚れ・ムラ・目地を描く（テクスチャ画像なしで、どんな大きさでも模様の細かさが揃う）
+ */
+function surface(mat: THREE.MeshStandardMaterial, kind: 'ground' | 'road' | 'slab') {
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSWorld;')
+      .replace(
+        '#include <worldpos_vertex>',
+        `#include <worldpos_vertex>
+        vec4 sw = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          sw = instanceMatrix * sw;
+        #endif
+        vSWorld = (modelMatrix * sw).xyz;`,
+      );
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vSWorld;\n' + NOISE_GLSL)
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        vec2 wp = vSWorld.xz;
+        ${
+          kind === 'road'
+            ? `float grain = gh(floor(wp * 18.0));
+               float patchy = fbm(wp * 0.12);
+               float crack = 1.0 - smoothstep(0.0, 0.02, abs(gn(wp * 0.7) - 0.5)) * step(0.6, gn(wp * 0.21));
+               diffuseColor.rgb *= (0.86 + grain * 0.1 + (patchy - 0.5) * 0.28) * mix(1.0, 0.72, 1.0 - crack);`
+            : kind === 'slab'
+              ? `vec2 t = fract(wp / 0.6);
+                 float joint = step(t.x, 0.03) + step(t.y, 0.03);
+                 float stain = fbm(wp * 0.3);
+                 diffuseColor.rgb *= (0.93 + (stain - 0.5) * 0.18 + gh(floor(wp / 0.6)) * 0.05) * (1.0 - min(joint, 1.0) * 0.18);`
+              : `float big = fbm(wp * 0.045);
+                 float small = gn(wp * 2.3);
+                 diffuseColor.rgb *= 0.84 + big * 0.26 + (small - 0.5) * 0.1;
+                 if (diffuseColor.g > diffuseColor.r * 1.08) diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.18, 1.06, 0.72), smoothstep(0.52, 0.78, big) * 0.55);`
+        }`,
+      );
+  };
+  mat.customProgramCacheKey = () => 'surface-' + kind;
+  return mat;
+}
+
 const offsetMat = (factor: number, rough = 0.95) =>
   new THREE.MeshStandardMaterial({
     roughness: rough,
@@ -127,8 +179,9 @@ const offsetMat = (factor: number, rough = 0.95) =>
 export const MAT = {
   plain: new THREE.MeshStandardMaterial({ roughness: 0.88 }),
   flatShade: new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true }),
-  ground: offsetMat(-1),
-  road: offsetMat(-2),
+  ground: surface(offsetMat(-1), 'ground'),
+  road: surface(offsetMat(-2), 'road'),
+  slab: surface(new THREE.MeshStandardMaterial({ roughness: 0.9 }), 'slab'),
   mark: offsetMat(-4, 0.8),
   lamp: new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xffd28a, emissiveIntensity: 0.0, roughness: 0.5 }),
   neon: new THREE.MeshStandardMaterial({ emissive: 0xffffff, emissiveIntensity: 0.3, roughness: 0.6 }),

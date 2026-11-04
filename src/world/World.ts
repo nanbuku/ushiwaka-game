@@ -6,6 +6,7 @@ import { buildDistrictLot } from './districts';
 import { computeLots, computeRoads, districtAt, HALF, inRect, LINES, ROAD, type District, type Lot, type Rect, type RoadKind, type RoadSeg } from './Layout';
 import { NavGraph } from './Navigation';
 import type { VehicleKind } from '../vehicles/VehicleModel';
+import type { WeaponId } from '../gameplay/Weapons';
 
 export interface StaticSpot {
   x: number;
@@ -46,6 +47,8 @@ export class World {
   nankuYaw = 0;
   homeArea: Rect = { x0: 0, x1: 0, z0: 0, z1: 0 };
   staticSpots: StaticSpot[] = [];
+  /** 武器が落ちている場所 */
+  weaponSpots: { id: WeaponId; x: number; y: number; z: number }[] = [];
   /** 乗れる乗り物の駐車場所 */
   vehicleSpots: { x: number; y: number; z: number; yaw: number; kind: VehicleKind }[] = [];
   animated: Animated[] = [];
@@ -73,6 +76,11 @@ export class World {
     }
     this.buildBorders();
     this.buildTrafficLights();
+    if (this.wirePts.length) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(this.wirePts, 3));
+      this.root.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: '#202020' })));
+    }
     this.nav.buildFromLots(this.lots);
     const stats = this.b.finish(this.root);
     this.game.scene.add(this.root);
@@ -128,7 +136,7 @@ export class World {
     const d = lot.z1 - lot.z0;
     if (lot.raised) {
       // 歩道（縁石込みの台）＋内側の地面
-      b.box('plain', cx, 0, cz, w, lot.y, d, '#bdb8ae', 0, false);
+      b.box('slab', cx, 0, cz, w, lot.y, d, '#bdb8ae', 0, false);
       this.game.physics.staticBox(cx, lot.y / 2, cz, w / 2, lot.y / 2, d / 2);
       const ix0 = lot.x0 + lot.sw.w;
       const ix1 = lot.x1 - lot.sw.e;
@@ -154,6 +162,7 @@ export class World {
     ];
     for (const s of sides) {
       if (!lampKinds.has(s.k) || s.sw <= 0) continue;
+      const line: [number, number, number][] = [];
       const [x0, z0, x1, z1] = s.pts;
       const len = Math.hypot(x1 - x0, z1 - z0);
       const n = Math.floor(len / 28);
@@ -162,9 +171,36 @@ export class World {
         const x = x0 + (x1 - x0) * t;
         const z = z0 + (z1 - z0) * t;
         if (lot.district === 'town' || lot.district === 'civic' || lot.district === 'riverside') {
-          if (i % 2 === 0) b.pole(x, z, y, s.rot + Math.PI / 2);
+          if (i % 2 === 0) {
+            b.pole(x, z, y, s.rot + Math.PI / 2);
+            line.push([x, y, z]);
+          }
           else b.lamp(x, z, y, s.rot);
         } else b.lamp(x, z, y, s.rot);
+      }
+      // 電柱どうしを電線でつなぐ（たるませる）
+      for (let k = 0; k + 1 < line.length; k++) this.addWire(line[k], line[k + 1]);
+    }
+  }
+
+  private wirePts: number[] = [];
+  private addWire(a: [number, number, number], b2: [number, number, number]) {
+    const dx = b2[0] - a[0];
+    const dz = b2[2] - a[2];
+    const len = Math.hypot(dx, dz);
+    const px = -dz / len;
+    const pz = dx / len;
+    for (const [off, h] of [
+      [0.7, 8.38],
+      [-0.7, 8.38],
+      [0.15, 7.62],
+    ] as const) {
+      const N = 10;
+      for (let i = 0; i < N; i++) {
+        for (const t of [i / N, (i + 1) / N]) {
+          const sag = 4 * t * (1 - t) * (0.6 + len * 0.012);
+          this.wirePts.push(a[0] + dx * t + px * off, a[1] + h - sag, a[2] + dz * t + pz * off);
+        }
       }
     }
   }

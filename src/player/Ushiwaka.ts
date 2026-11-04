@@ -3,6 +3,7 @@ import type { Game } from '../core/Game';
 import { G, groups, RAPIER } from '../core/Physics';
 import { angleDiff, clamp, damp, rand } from '../core/Rng';
 import type { WorldItem } from '../gameplay/Items';
+import { WEAPON_ORDER } from '../gameplay/Weapons';
 import type { Vehicle } from '../vehicles/Vehicle';
 import { DogModel } from './DogModel';
 
@@ -93,24 +94,25 @@ export class Ushiwaka {
     // ---------- 運転中 ----------
     if (this.driving) {
       const v = this.driving;
-      if (canAct && inp.pressed('KeyF') && Math.abs(v.speed) < 8) {
+      if (canAct && inp.pressed('KeyF')) {
+        // 降りたフレームですぐ乗り直さないよう、ここで終わる
         this.exitVehicle();
-      } else {
-        v.drive(dt);
-        if (canAct && inp.mousePressed(2)) {
-          g.audio.play('horn', v.pos, 0.9);
-          this.bark(false);
-        }
-        g.audio.engineSet(Math.abs(v.speed) / v.spec.maxSpeed);
-        v.sync(dt);
-        const seat = v.seatWorld();
-        this.pos.copy(seat);
-        this.yaw = v.yaw;
-        this.vel.set(0, 0, 0);
-        this.body.setNextKinematicTranslation({ x: seat.x, y: seat.y + CENTER, z: seat.z });
-        this.syncModel(dt, 0);
         return;
       }
+      v.drive(dt, v.playerInput());
+      if (canAct && inp.mousePressed(2)) {
+        g.audio.play('horn', v.pos, 0.9);
+        this.bark(false);
+      }
+      g.audio.engineSet(Math.abs(v.speed) / v.spec.maxSpeed);
+      v.sync(dt);
+      const seat = v.seatWorld();
+      this.pos.copy(seat);
+      this.yaw = v.yaw;
+      this.vel.set(0, 0, 0);
+      this.body.setNextKinematicTranslation({ x: seat.x, y: seat.y + CENTER, z: seat.z });
+      this.syncModel(dt, Math.abs(v.speed) * (v.kind === 'bicycle' ? 0.35 : 0));
+      return;
     }
     if (canAct && inp.pressed('KeyF')) {
       const v = g.traffic.nearest(this.pos, 1.6);
@@ -198,7 +200,15 @@ export class Ushiwaka {
 
     // ---------- アクション ----------
     if (canAct) {
-      if (inp.mousePressed(0)) this.bite();
+      const w = g.weapons;
+      if (inp.mousePressed(0)) {
+        if (w.current === 'bite' || this.carrying) this.bite();
+        else w.attackPressed();
+      }
+      if (inp.mouseDown(0) && w.current === 'chainsaw' && !this.carrying) w.attackHeld(dt);
+      for (let i = 1; i <= WEAPON_ORDER.length; i++) if (inp.pressed(`Digit${i}`)) w.select(WEAPON_ORDER[i - 1]);
+      if (inp.pressed('KeyR')) w.cycle();
+      if (inp.pressed('KeyG')) w.detonate();
       if (inp.mouseDown(2)) this.charge = Math.min(1.2, this.charge + dt);
       if (inp.mouseReleased(2)) {
         this.bark(this.charge > 0.75);
@@ -219,15 +229,38 @@ export class Ushiwaka {
     g.hud.popText(this.headWorld(), v.kind === 'scooter' ? 'ブンブン!' : 'ブロロン!', '#ffffff', 24);
   }
 
+  /** 降りる。速く走っているときは飛び降りて転がる */
   exitVehicle() {
     const v = this.driving;
     if (!v) return;
     const g = this.game;
     this.driving = null;
     g.traffic.unboard(v);
+    // 右ハンドルなので右側（バイクは左右どちらでも）へ降りる
     const side = v.spec.halfW + 0.55;
-    const p = new THREE.Vector3(v.pos.x + Math.cos(v.yaw) * side, v.pos.y + 0.3, v.pos.z - Math.sin(v.yaw) * side);
+    const rx = -Math.cos(v.yaw);
+    const rz = Math.sin(v.yaw);
+    let p = new THREE.Vector3(v.pos.x + rx * side, v.pos.y + 0.35, v.pos.z + rz * side);
+    const blocked = g.physics.raycast(new THREE.Vector3(v.pos.x, v.pos.y + 0.6, v.pos.z), new THREE.Vector3(rx, 0, rz), side + 0.3, G.STATIC);
+    if (blocked) p = new THREE.Vector3(v.pos.x - rx * side, v.pos.y + 0.35, v.pos.z - rz * side);
     this.teleport(p, v.yaw);
+    const sp = Math.abs(v.speed);
+    if (sp > 6) {
+      // 飛び降り
+      const f = v.forward.clone().multiplyScalar(v.speed * 0.55);
+      this.vel.set(f.x + rx * 3, 3.5, f.z + rz * 3);
+      this.hurtCd = 0;
+      this.hurt(Math.min(30, sp * 1.1), p.clone().sub(new THREE.Vector3(rx, 0, rz)));
+      g.hud.popText(this.headWorld(), 'ゴロゴロ…', '#ffffff', 26);
+    }
+  }
+
+  /** バイクで激突したときなど、乗り物から投げ出される */
+  bailOut(force: boolean) {
+    if (!this.driving) return;
+    const v = this.driving;
+    if (force) v.speed = Math.max(v.speed, 7);
+    this.exitVehicle();
   }
 
   private syncModel(dt: number, hs = 0) {
@@ -273,21 +306,28 @@ export class Ushiwaka {
     g.audio.play('chomp', this.pos, 0.5);
   }
 
+  /** 武器を振る動き（噛みつきと同じ頭の動き） */
+  swing() {
+    this.biteT = 0;
+  }
+
   // ---------- 吠える ----------
-  bark(big: boolean) {
-    if (this.barkCd > 0) return;
+  bark(big: boolean, mega = false) {
+    if (this.barkCd > 0 && !mega) return;
     const g = this.game;
+    mega = mega || (g.weapons.current === 'megaphone' && g.weapons.ammo.megaphone > 0);
     this.barkCd = big ? 1.4 : 0.45;
     this.barkT = 0;
     this.barkBig = big;
-    const radius = big ? 15 : 7.5;
+    const radius = (big ? 15 : 7.5) * (mega ? 2.2 : 1);
+    if (mega) g.audio.play('mega', this.pos, 1);
     g.audio.play(big ? 'bigbark' : 'bark', this.pos, big ? 1 : 0.85, rand.range(0.95, 1.08));
     const head = this.headWorld();
     g.fx.shockwave(head, radius, big);
     g.hud.popText(head.clone().add(new THREE.Vector3(0, 0.4, 0)), big ? 'ワオオオォン!!' : rand.pick(['ワン!', 'ワンッ!', 'キャン!']), big ? '#ff3b6b' : '#ffffff', big ? 40 : 28);
     if (big) g.camRig.addShake(0.8);
     if (this.carrying && big) this.drop(false);
-    g.npcs.onBark(this.pos, radius, big);
+    g.npcs.onBark(this.pos, radius, big, mega);
     g.nanku.onBark(this.pos, big);
   }
 
@@ -372,9 +412,9 @@ export class Ushiwaka {
   get hint(): string {
     const g = this.game;
     if (this.dead) return '';
-    if (this.driving) return 'F: 降りる　W/S: アクセル・ブレーキ　A/D: ハンドル　Space: サイドブレーキ　右クリック: クラクション';
+    if (this.driving) return `F: 降りる（走行中は飛び降り）　W/S: アクセル・ブレーキ　A/D: ハンドル　Space: サイドブレーキ（ドリフト）　右クリック: クラクション`;
     const veh = g.traffic.nearest(this.pos, 1.6);
-    if (veh) return `F: ${veh.kind === 'scooter' ? 'スクーター' : veh.kind === 'catcherVan' ? '保健所の車' : '車'}に乗る${veh.driver === 'npc' ? '（運転手を追い出す）' : ''}`;
+    if (veh) return `F: ${veh.spec.name}に乗る${veh.driver === 'npc' ? '（運転手を追い出す）' : ''}`;
     if (g.nanku.canTalk(this.pos)) return this.carrying ? `E: なんくに「${this.carrying.def.name}」をわたす` : 'E: なんくと話す';
     if (this.carrying) return this.carrying.def.id === 'bomb' ? 'Q: 爆弾を投げる（火がつく！）　E: 置く（3.5秒で爆発）' : `E: はなす　Q: なげる（${this.carrying.def.name}）`;
     const it = g.items.findNear(this.mouthWorld(), this.pos.y, 0.95);

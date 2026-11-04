@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import { G, groups, quatY, RAPIER } from '../core/Physics';
-import { clamp, damp } from '../core/Rng';
+import { clamp, damp, rand } from '../core/Rng';
 import { VehicleModel, type VehicleKind, type VehicleSpec } from './VehicleModel';
 
 export interface Lane {
@@ -35,18 +35,33 @@ export interface AIState {
   turn: Turn | null;
 }
 
+/** 運転の入力（アクセル -1〜1、ハンドル -1〜1、サイドブレーキ） */
+export interface DriveInput {
+  thr: number;
+  st: number;
+  hand: boolean;
+}
+
+/** 車体の当たり判定を地面からこの高さだけ浮かせる（縁石や段差で止まらないように） */
+const CLEAR = 0.32;
 const _v = new THREE.Vector3();
 
-/** 車・スクーター。AI（交通）でもプレイヤー（うしわか）でも運転できる */
+/** 車・バイクなど。AI（交通）でもプレイヤー（うしわか）でも運転できる */
 export class Vehicle {
   model: VehicleModel;
   spec: VehicleSpec;
   pos = new THREE.Vector3();
   yaw = 0;
+  /** 前向きの速度（後退はマイナス） */
   speed = 0;
+  /** 横すべりの速度（ドリフト） */
+  slip = 0;
   steer = 0;
-  vy = 0;
+  yawRate = 0;
+  hp = 100;
   driver: 'none' | 'npc' | 'player' = 'none';
+  /** 最後にプレイヤーが運転してからの秒数（無人の暴走車の責任判定） */
+  playerT = 999;
   ai: AIState | null = null;
   /** 駐車スポット由来（遠くに行っても消さない） */
   persistent = false;
@@ -55,6 +70,9 @@ export class Vehicle {
   brakeT = 0;
   honkCd = 0;
   dead = false;
+  /** 撒菱でパンクした */
+  flat = false;
+  burnT = -1;
   private body: RAPIER.RigidBody;
   collider: RAPIER.Collider;
   private cc: RAPIER.KinematicCharacterController;
@@ -64,6 +82,7 @@ export class Vehicle {
   private wreckV: THREE.Vector3 | null = null;
   private spinX = 0;
   private spinZ = 0;
+  private smokeT = 0;
 
   constructor(
     private game: Game,
@@ -79,25 +98,26 @@ export class Vehicle {
     this.yaw = yaw;
     const w = game.physics.world;
     const s = this.spec;
-    this.body = w.createRigidBody(
-      RAPIER.RigidBodyDesc.kinematicPositionBased()
-        .setTranslation(x, y + s.height / 2 + 0.05, z)
-        .setRotation(quatY(yaw)),
-    );
+    const hh = Math.max(0.2, (s.height - CLEAR) / 2);
+    this.body = w.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, y, z).setRotation(quatY(yaw)));
     this.collider = w.createCollider(
-      RAPIER.ColliderDesc.cuboid(s.halfW, s.height / 2 - 0.05, s.halfL).setCollisionGroups(groups(G.VEHICLE, G.STATIC | G.PLAYER | G.NPC | G.VEHICLE | G.ITEM)),
+      RAPIER.ColliderDesc.cuboid(s.halfW, hh, s.halfL)
+        .setTranslation(0, CLEAR + hh, 0)
+        .setCollisionGroups(groups(G.VEHICLE, G.STATIC | G.PLAYER | G.NPC | G.VEHICLE | G.ITEM)),
       this.body,
     );
-    this.cc = w.createCharacterController(0.03);
-    this.cc.enableAutostep(0.25, 0.3, false);
-    this.cc.enableSnapToGround(0.4);
-    this.cc.setMaxSlopeClimbAngle((40 * Math.PI) / 180);
+    this.cc = w.createCharacterController(0.04);
+    this.cc.setSlideEnabled(true);
     game.scene.add(this.model.root);
     this.sync(0);
   }
 
   get forward() {
     return _v.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+  }
+
+  get kmh() {
+    return Math.round(Math.abs(this.speed) * 3.6);
   }
 
   /** 点 p が車体の範囲（pad だけ広げた）に入っているか */
@@ -111,59 +131,134 @@ export class Vehicle {
     return Math.abs(lx) < this.spec.halfW + pad && Math.abs(lz) < this.spec.halfL + pad && Math.abs(p.y - this.pos.y) < 2;
   }
 
-  /** プレイヤーの運転 */
-  drive(dt: number) {
+  /** プレイヤーの入力を読む */
+  playerInput(): DriveInput {
     const g = this.game;
     const inp = g.input;
-    const can = inp.active && !g.dialogue.active && !g.paused;
-    const thr = can ? (inp.down('KeyW') || inp.down('ArrowUp') ? 1 : 0) - (inp.down('KeyS') || inp.down('ArrowDown') ? 1 : 0) : 0;
-    const st = can ? (inp.down('KeyA') ? 1 : 0) - (inp.down('KeyD') ? 1 : 0) : 0;
-    const s = this.spec;
-    if (thr > 0) this.speed += (this.speed < 0 ? 14 : s.accel * (1 - Math.max(0, this.speed) / s.maxSpeed)) * dt;
-    else if (thr < 0) this.speed -= (this.speed > 0.5 ? 16 : s.accel * 0.6) * dt;
-    else this.speed -= Math.sign(this.speed) * Math.min(Math.abs(this.speed), (1.5 + Math.abs(this.speed) * 0.12) * dt);
-    if (can && inp.down('Space')) this.speed *= 1 - Math.min(1, 2.6 * dt);
-    this.speed = clamp(this.speed, -7, s.maxSpeed);
-    const maxSteer = 0.6 / (1 + Math.abs(this.speed) * 0.05);
-    this.steer += (st * maxSteer - this.steer) * damp(8, dt);
-    this.move(dt);
-    const target = s.bike ? -this.steer * clamp(Math.abs(this.speed) / 10, 0, 1) * 0.9 : 0;
-    this.lean += (target - this.lean) * damp(6, dt);
+    if (!(inp.active && !g.dialogue.active && !g.paused)) return { thr: 0, st: 0, hand: false };
+    return {
+      thr: (inp.down('KeyW') || inp.down('ArrowUp') ? 1 : 0) - (inp.down('KeyS') || inp.down('ArrowDown') ? 1 : 0),
+      st: (inp.down('KeyA') ? 1 : 0) - (inp.down('KeyD') ? 1 : 0),
+      hand: inp.down('Space'),
+    };
   }
 
-  private move(dt: number) {
+  /**
+   * 運転（アーケード風の簡易物理）。ctl が null なら無人で惰性走行。
+   * 曲がっても速度はほとんど落ちず、速いほどハンドルが効きにくい（タイヤのグリップで制限）。
+   */
+  drive(dt: number, ctl: DriveInput | null) {
     const s = this.spec;
-    const wb = s.halfL * 1.25;
-    this.yaw += (this.speed / wb) * Math.tan(this.steer) * dt * (s.turn / 2.6);
-    this.vy = Math.max(this.vy - 25 * dt, -30);
-    const dx = Math.sin(this.yaw) * this.speed * dt;
-    const dz = Math.cos(this.yaw) * this.speed * dt;
-    this.body.setRotation(quatY(this.yaw), true);
-    this.cc.computeColliderMovement(this.collider, { x: dx, y: this.vy * dt, z: dz }, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, groups(G.VEHICLE, G.STATIC | G.VEHICLE));
-    const mv = this.cc.computedMovement();
-    if (this.cc.computedGrounded() && this.vy < 0) this.vy = 0;
-    const want = Math.hypot(dx, dz);
-    const got = Math.hypot(mv.x, mv.z);
-    if (want > 0.02 && got < want * 0.45) {
-      const g = this.game;
-      if (Math.abs(this.speed) > 7) {
-        g.audio.play('crash', this.pos, Math.min(1, Math.abs(this.speed) / 18));
-        g.camRig.addShake(Math.min(1, Math.abs(this.speed) / 15));
-        g.fx.sparks(this.pos.clone().add(this.forward.clone().multiplyScalar(this.spec.halfL)));
-      }
-      this.speed *= Math.abs(this.speed) > 7 ? -0.2 : 0.4;
+    const thr = ctl?.thr ?? 0;
+    const st = ctl?.st ?? 0;
+    const hand = ctl?.hand ?? false;
+    const sp = this.speed;
+    const maxSpeed = s.maxSpeed * (this.flat ? 0.45 : 1) * (this.hp < 25 ? 0.7 : 1);
+    if (thr > 0) {
+      if (sp < -0.3) this.speed += s.brake * dt;
+      else this.speed += s.accel * Math.max(0, 1 - (Math.max(0, sp) / maxSpeed) ** 2) * dt;
+    } else if (thr < 0) {
+      if (sp > 0.3) this.speed -= s.brake * dt;
+      else this.speed = Math.max(-s.reverseMax, this.speed - s.accel * 0.55 * dt);
+    } else {
+      const drag = 0.9 + 0.0045 * sp * sp + (ctl ? 0 : 0.6);
+      this.speed -= Math.sign(sp) * Math.min(Math.abs(sp), drag * dt);
     }
-    const t = this.body.translation();
-    this.body.setNextKinematicTranslation({ x: t.x + mv.x, y: t.y + mv.y, z: t.z + mv.z });
-    this.pos.set(t.x + mv.x, t.y + mv.y - (s.height / 2 + 0.05), t.z + mv.z);
+    if (hand) this.speed -= Math.sign(this.speed) * Math.min(Math.abs(this.speed), 5 * dt);
+
+    // ハンドル（速いほど切れ角が小さい）
+    const v01 = clamp(Math.abs(this.speed) / s.maxSpeed, 0, 1);
+    const steerMax = s.steerMax * (1 - v01 * 0.62);
+    this.steer += (st * steerMax - this.steer) * damp(st !== 0 ? 7 : 10, dt);
+    const wb = s.halfL * 1.35;
+    let yawRate = (this.speed / wb) * Math.tan(this.steer);
+    // グリップの限界（横方向の加速度 = 速度 × 角速度）
+    const grip = s.grip * (hand ? 1.7 : 1) * (this.flat ? 0.6 : 1);
+    const maxYaw = grip / Math.max(2.5, Math.abs(this.speed));
+    yawRate = clamp(yawRate, -maxYaw, maxYaw);
+    if (this.flat) yawRate += Math.sin(performance.now() * 0.004) * 0.25 * v01;
+    this.yawRate = yawRate;
+    this.yaw += yawRate * dt;
+    // ドリフト（サイドブレーキで横にすべる）
+    this.slip += (-yawRate * this.speed * (hand ? 0.22 : 0.04)) * dt;
+    this.slip *= Math.exp(-(hand ? 1.2 : 6) * dt);
+    if (hand && Math.abs(this.slip) > 2.5 && Math.abs(this.speed) > 8 && Math.random() < dt * 20) this.game.fx.skid(this.pos);
+
+    this.moveBy(dt);
+    const leanT = s.bike ? clamp(-yawRate * Math.abs(this.speed) * 0.06, -0.6, 0.6) : clamp(-yawRate * this.speed * 0.006, -0.05, 0.05);
+    this.lean += (leanT - this.lean) * damp(6, dt);
+    if (this.driver === 'player') this.playerT = 0;
+    else this.playerT += dt;
+    this.damageEffects(dt);
+  }
+
+  private moveBy(dt: number) {
+    const fx = Math.sin(this.yaw);
+    const fz = Math.cos(this.yaw);
+    const rx = -fz;
+    const rz = fx;
+    const dx = (fx * this.speed + rx * this.slip) * dt;
+    const dz = (fz * this.speed + rz * this.slip) * dt;
+    this.cc.computeColliderMovement(this.collider, { x: dx, y: 0, z: dz }, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, groups(G.VEHICLE, G.STATIC | G.VEHICLE));
+    const mv = this.cc.computedMovement();
+    // ぶつかった分だけ速度を失う（壁に沿ってすべる成分は残る）
+    const along = (mv.x * fx + mv.z * fz) / Math.max(dt, 1e-4);
+    const lost = Math.abs(this.speed) - Math.abs(along);
+    if (Math.hypot(dx, dz) > 1e-3 && lost > 0.8) {
+      if (lost > 6) this.crash(lost);
+      this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(along)) * (lost > 6 ? 0.6 : 1);
+      this.slip *= 0.5;
+    }
+    const nx = this.pos.x + mv.x;
+    const nz = this.pos.z + mv.z;
+    const gy = this.game.world.groundHeight(nx, nz);
+    this.pos.set(nx, this.pos.y + (gy - this.pos.y) * damp(14, dt), nz);
+    this.body.setNextKinematicTranslation({ x: this.pos.x, y: this.pos.y, z: this.pos.z });
+    this.body.setNextKinematicRotation(quatY(this.yaw));
+  }
+
+  private crash(lost: number) {
+    const g = this.game;
+    const k = clamp(lost / 18, 0, 1);
+    this.hp -= lost * (this.spec.bike ? 2.2 : 1.6);
+    g.audio.play('crash', this.pos, 0.4 + k * 0.6);
+    if (this.driver === 'player') g.camRig.addShake(0.3 + k);
+    g.fx.sparks(this.pos.clone().add(this.forward.clone().multiplyScalar(this.spec.halfL * Math.sign(this.speed || 1))));
+    // バイク・自転車は勢いよくぶつかると投げ出される
+    if (this.spec.bike && lost > 9 && this.driver === 'player') g.player.bailOut(true);
+  }
+
+  /** 壊れかけ → 煙 → 炎上して爆発 */
+  private damageEffects(dt: number) {
+    if (this.wrecked) return;
+    const g = this.game;
+    if (this.hp < 35) {
+      this.smokeT -= dt;
+      if (this.smokeT < 0) {
+        this.smokeT = this.hp < 10 ? 0.05 : 0.15;
+        g.fx.smoke(this.pos.clone().add(this.forward.clone().multiplyScalar(this.spec.halfL * 0.7)).setY(this.pos.y + this.spec.height * 0.8), this.hp < 10);
+      }
+    }
+    if (this.hp <= 0 && this.burnT < 0) {
+      this.burnT = 4;
+      if (this.driver === 'player') g.hud.toast('車が燃えている！ すぐに降りて（F）！', 'bad', 4);
+    }
+    if (this.burnT >= 0) {
+      this.burnT -= dt;
+      if (this.burnT < 0) {
+        this.burnT = -1;
+        this.hp = 100;
+        g.explode(this.pos.clone().setY(this.pos.y + 0.6), this.playerT < 15);
+      }
+    }
   }
 
   /** AI の位置を直接セット（車線に沿って動く） */
   place(x: number, y: number, z: number, yaw: number) {
     this.pos.set(x, y, z);
     this.yaw = yaw;
-    this.body.setNextKinematicTranslation({ x, y: y + this.spec.height / 2 + 0.05, z });
-    this.body.setRotation(quatY(yaw), true);
+    this.body.setNextKinematicTranslation({ x, y, z });
+    this.body.setNextKinematicRotation(quatY(yaw));
   }
 
   sync(dt: number) {
@@ -173,14 +268,28 @@ export class Vehicle {
     this.model.animate(this.speed, this.steer, dt, this.lean);
   }
 
+  /** 撒菱を踏んだ */
+  puncture() {
+    if (this.flat) return;
+    this.flat = true;
+    this.game.audio.play('pop', this.pos, 0.9);
+    this.game.fx.sparks(this.pos);
+    if (this.ai) {
+      this.brakeT = 3;
+      this.speed *= 0.4;
+    }
+  }
+
   /** 爆風で吹っ飛ぶ（以後は動かない残骸） */
   blast(vel: THREE.Vector3) {
     this.ai = null;
     this.driver = 'none';
     this.speed = 0;
+    this.slip = 0;
+    this.burnT = -1;
     this.wreckV = vel.clone();
-    this.spinX = (Math.random() - 0.5) * 6;
-    this.spinZ = (Math.random() - 0.5) * 6;
+    this.spinX = (rand.next() - 0.5) * 6;
+    this.spinZ = (rand.next() - 0.5) * 6;
     if (!this.wrecked) {
       this.wrecked = true;
       this.model.root.traverse((o) => {
@@ -197,6 +306,7 @@ export class Vehicle {
 
   /** 吹っ飛び中の動き（Traffic から毎フレーム呼ぶ） */
   updateWreck(dt: number) {
+    if (Math.random() < dt * 6) this.game.fx.smoke(this.pos.clone().setY(this.pos.y + 1), true);
     if (!this.wreckV) return;
     const v = this.wreckV;
     v.y -= 22 * dt;
@@ -214,8 +324,7 @@ export class Vehicle {
         g.audio.play('crash', this.pos, 0.7);
       } else {
         this.wreckV = null;
-        const flip = Math.round(this.model.body.rotation.z / Math.PI) * Math.PI;
-        this.model.body.rotation.z = flip;
+        this.model.body.rotation.z = Math.round(this.model.body.rotation.z / Math.PI) * Math.PI;
         this.model.body.rotation.x = Math.round(this.model.body.rotation.x / Math.PI) * Math.PI;
       }
     }

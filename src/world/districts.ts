@@ -4,9 +4,14 @@ import { WorldBuilder } from './Builder';
 import { rectsOverlap, usable, type Lot, type Rect } from './Layout';
 import type { World } from './World';
 import type { VehicleKind } from '../vehicles/VehicleModel';
+import type { WeaponId } from '../gameplay/Weapons';
 
 function vehicle(w: World, x: number, y: number, z: number, yaw: number, kind: VehicleKind) {
   w.vehicleSpots.push({ x, y, z, yaw, kind });
+}
+
+function weapon(w: World, id: WeaponId, x: number, y: number, z: number) {
+  w.weaponSpots.push({ id, x, y, z });
 }
 
 const WALLS = ['#f3ead8', '#e8dcc6', '#f5f1ea', '#d9cbb3', '#cfd8dc', '#f0e0d0', '#e4d4c0', '#c9d3cf', '#efe6da'];
@@ -491,7 +496,8 @@ function townKonbini(w: World, lot: Lot, a: Rect) {
   b.vending(kx - 5.8, kz - 6.2, y, Math.PI, '#1f5fae');
   b.trashcan(kx - 3.8, kz - 6.4, y);
   vehicle(w, kx - 2, y, kz - 8.6, Math.PI / 2, 'scooter');
-  vehicle(w, kx + 1, y, kz - 8.6, Math.PI / 2, 'scooter');
+  vehicle(w, kx + 1, y, kz - 8.6, Math.PI / 2, 'bicycle');
+  vehicle(w, kx + 2.2, y, kz - 8.6, Math.PI / 2, 'bicycle');
 
   // 神社
   const sx = a.x0 + 52;
@@ -510,6 +516,7 @@ function townKonbini(w: World, lot: Lot, a: Rect) {
   b.batch.add('roof', WorldBuilder.mat(sx, y + 4, hz, 0, 8, 2.4, 7), '#3b3b3b');
   b.box('plain', sx, y + 0.8, hz + 3.4, 1.6, 0.9, 0.9, '#6b4a2a');
   for (let k = 0; k < 3; k++) item(w, 'manju', sx - 0.5 + k * 0.5, y + 1.7, hz + 3.4, 'shrine');
+  weapon(w, 'caltrops', sx + 3, y, hz + 5);
   for (const dx of [-5, 5]) {
     b.box('plain', sx + dx, y, hz + 8, 0.6, 1.4, 0.6, '#9a958c');
     b.box('lamp', sx + dx, y + 1.4, hz + 8, 0.5, 0.35, 0.5, '#fff6d8', 0, false);
@@ -623,6 +630,11 @@ function buildCity(w: World, lot: Lot) {
     b.sign('ひだまり駅', cx, lot.y + 7.4, cz + 7.05, 0, 9, 1.4, '#1f4e8c', '#ffffff', true);
     b.flat('ground', cx, lot.y + 0.006, cz + 14, 34, 12, '#cfcac0');
     for (let i = 0; i < 3; i++) vehicle(w, cx - 10 + i * 6, lot.y, cz + 16, Math.PI / 2, 'taxi');
+    for (let i = 0; i < 4; i++) vehicle(w, cx + 8 + i * 1.1, lot.y, cz + 10, 0, 'bicycle');
+    vehicle(w, cx + 14, lot.y, cz + 10, 0, 'motorbike');
+  } else if (lot.cx0 === 200 && lot.cz0 === -100) {
+    plaza(w, lot, inner, true);
+    weapon(w, 'c4', (inner.x0 + inner.x1) / 2 + 6, lot.y, (inner.z0 + inner.z1) / 2);
   } else if (rng.chance(0.5)) {
     plaza(w, lot, inner, true);
   } else {
@@ -644,6 +656,10 @@ function buildDowntown(w: World, lot: Lot) {
     const cz = (inner.z0 + inner.z1) / 2;
     b.building(cx, cz, lot.y, inner.x1 - inner.x0 - 4, inner.z1 - inner.z0 - 4, 18, '#efe7da', 0, 'shop');
     b.sign('ショッピングモール ワンダフル', cx, lot.y + 15, inner.z1 - 1.95, 0, 20, 2.2, '#ff6f91', '#ffffff', true);
+    vehicle(w, inner.x0 - 6, lot.y, inner.z1 + 6, Math.PI / 2, 'sports');
+    vehicle(w, inner.x0 + 2, lot.y, inner.z1 + 6, Math.PI / 2, 'sports');
+    vehicle(w, inner.x0 + 9, lot.y, inner.z1 + 6, 0, 'motorbike');
+    vehicle(w, inner.x0 + 10.5, lot.y, inner.z1 + 6, 0, 'motorbike');
   } else if (lot.cx0 === 100 && lot.cz0 === 100) {
     plaza(w, lot, inner);
     // 花火屋（爆弾が買える…というか盗める）
@@ -654,6 +670,8 @@ function buildDowntown(w: World, lot: Lot) {
     for (const dx of [-2.6, 2.6]) w.b.cyl(fx + dx, lot.y, fz + 1.2, 0.06, 2.6, '#222222', false);
     w.b.sign('花火・火薬 ドカン堂', fx, lot.y + 3.1, fz + 1.42, 0, 4.6, 0.75, '#d62828', '#ffe066', true);
     for (let k = 0; k < 4; k++) item(w, 'bomb', fx - 1.8 + k * 1.2, lot.y + 1.0, fz + 0.5, 'shop');
+    weapon(w, 'rocket', fx - 3.5, lot.y, fz + 2.2);
+    weapon(w, 'molotov', fx + 3.5, lot.y, fz + 2.2);
     w.staticSpots.push({ x: fx + 2.2, y: lot.y, z: fz - 1.6, yaw: 0, kind: 'clerk', district: 'downtown' });
   } else {
     plaza(w, lot, inner);
@@ -682,6 +700,9 @@ function buildCivic(w: World, lot: Lot) {
       b.box('plain', gx, y + 2.2, cz + 30, 0.1, 1, 3, '#eeeeee', 0, false);
     }
     for (let i = 0; i < 8; i++) b.tree(a.x0 + 4 + i * 10, a.z1 - 4, y, 1.0, 'sakura');
+    for (let i = 0; i < 6; i++) vehicle(w, a.x1 - 6 - i * 1.0, y, a.z0 + 24, Math.PI / 2, 'bicycle');
+    weapon(w, 'bat', cx - 12, y, cz + 26);
+    weapon(w, 'megaphone', cx + 18, y, a.z0 + 21);
   } else if (lot.cx0 === 0 && lot.cz0 === 100) {
     // ひだまり総合病院
     b.building(cx, cz - 8, y, 40, 22, 28, '#f4f6f7', 0, 'office');
@@ -690,7 +711,9 @@ function buildCivic(w: World, lot: Lot) {
     b.box('plain', cx + 16, y + 29, cz - 8, 1, 1, 0.42, '#ffffff', 0, false);
     b.flat('ground', cx, y + 0.006, cz + 18, 50, 22, '#55575c');
     for (let i = 0; i < 6; i++) if (rng.chance(0.6)) b.parkedCar(cx - 18 + i * 6, cz + 18, y, 0, rng.pick(CARS));
-    b.parkedCar(cx + 22, cz + 6, y, Math.PI / 2, '#ffffff');
+    vehicle(w, cx + 22, y, cz + 6, Math.PI / 2, 'ambulance');
+    vehicle(w, cx + 22, y, cz + 12, Math.PI / 2, 'ambulance');
+    vehicle(w, cx - 24, y, cz + 8, Math.PI / 2, 'firetruck');
   } else if (lot.cx0 === -100 && lot.cz0 === 200) {
     // 保健所
     b.building(cx - 6, cz - 10, y, 34, 18, 12, '#e7eadf', 0, 'office');
@@ -719,6 +742,9 @@ function buildCivic(w: World, lot: Lot) {
     b.building(a.x0 + 8, a.z0 + 7, y, 9, 8, 6, '#f0efe9', Math.PI, 'house');
     b.sign('交番', a.x0 + 8, y + 4.6, a.z0 + 2.94, Math.PI, 2.4, 0.7, '#ffffff', '#1d3c78');
     b.box('lamp', a.x0 + 8, y + 5.4, a.z0 + 2.9, 0.4, 0.4, 0.2, '#ff3b3b', Math.PI, false);
+    vehicle(w, a.x0 + 16, y, a.z0 + 6, 0, 'police');
+    weapon(w, 'megaphone', a.x0 + 12, y, a.z0 + 2);
+    vehicle(w, a.x0 + 3, y, a.z0 + 14, Math.PI / 2, 'bicycle');
     b.building(cx + 8, cz, y, 28, 20, 10, '#d8cbb5', 0, 'office');
     b.sign('ひだまり図書館', cx + 8, y + 7.5, cz + 10.05, 0, 8, 1.1, '#ffffff', '#5a4632');
     residential(w, lot, a, [{ x0: a.x0, x1: a.x0 + 18, z0: a.z0, z1: a.z0 + 18 }, { x0: cx - 8, x1: cx + 24, z0: cz - 12, z1: cz + 12 }]);
@@ -751,6 +777,7 @@ function buildRiverside(w: World, lot: Lot) {
       b.batch.add('roof', WorldBuilder.mat(bx, y + 12.5, cz - 12, Math.PI / 2, 30.5, 2.5, 22.5), '#6c7a86');
     }
     b.cyl(a.x1 - 10, y, a.z0 + 10, 1.2, 28, '#b33a2a');
+    vehicle(w, cx, y, cz + 26, 0, 'garbage');
     b.cyl(a.x1 - 16, y, a.z0 + 10, 1.0, 22, '#d8d8d8');
     b.flat('ground', cx, y + 0.006, cz + 24, a.x1 - a.x0 - 4, 26, '#8d8f93');
     for (let i = 0; i < 5; i++) b.box('plain', a.x0 + 10 + i * 13, y, cz + 26, 6, 2.6, 2.4, rng.pick(['#3d6b9a', '#a63d3d', '#5c8a3d', '#c99a2e']), 0);
@@ -759,6 +786,9 @@ function buildRiverside(w: World, lot: Lot) {
       b.box('plain', a.x0 + 12, y, cz + 18, 2.4, 0.8, 1.6, '#8a6a3a');
       b.sign('危険物', a.x0 + 12, y + 0.5, cz + 18.82, 0, 1.4, 0.35, '#ffd400', '#111111');
       for (let k = 0; k < 3; k++) item(w, 'bomb', a.x0 + 11.2 + k * 0.8, y + 0.8, cz + 18, 'shop');
+      weapon(w, 'c4', a.x0 + 16, y, cz + 18);
+      weapon(w, 'chainsaw', a.x0 + 22, y, cz + 18);
+      weapon(w, 'molotov', a.x0 + 28, y, cz + 18);
     }
   }
 }
@@ -803,6 +833,8 @@ function buildPark(w: World, lot: Lot) {
   w.physics.staticCylinder(cx, y + 0.25, a.z1 - 14, 0.25, 4.2);
   b.cyl(cx, y, a.z1 - 14, 0.5, 2.2, '#c9c2b4', false);
   b.sign('みどり公園', cx, y + 2.6, a.z1 - 2, 0, 5, 1.0, '#3f6b3a', '#ffffff');
+  vehicle(w, cx + 5, y, a.z1 - 3, Math.PI / 2, 'bicycle');
+  vehicle(w, cx + 6.2, y, a.z1 - 3, Math.PI / 2, 'bicycle');
   // 花壇
   for (let k = 0; k < 2; k++) {
     const fx = cx + (k ? 12 : -12);
@@ -812,6 +844,7 @@ function buildPark(w: World, lot: Lot) {
   // 遊具
   playground(w, cx + 55, cz + 40, y);
   item(w, 'ball', cx + 52, y, cz + 46);
+  weapon(w, 'bat', cx + 47, y, cz + 46);
   item(w, 'bone', cx + 40, y, cz - 50);
   // 公衆トイレ
   b.building(a.x0 + 12, a.z1 - 14, y, 8, 6, 3.4, '#d9cfc0', 0, 'house');
@@ -876,6 +909,18 @@ function buildAmusement(w: World, lot: Lot) {
     b.batch.add('cone', WorldBuilder.mat(hx + dx, y + 14, hz + dz, 0, 5, 5, 5), '#3b2f52');
   }
   b.sign('おばけやしき', hx, y + 7.5, hz + 9.05, 0, 8, 1.2, '#1a1028', '#c6ff7a', true);
+  // ゴーカート場（コーンで囲った広場にカートが並ぶ）
+  const kx0 = a.x1 - 70;
+  const kz0 = a.z1 - 34;
+  b.flat('ground', kx0, y + 0.008, kz0, 44, 22, '#4b4e55');
+  for (let i = 0; i < 5; i++) vehicle(w, kx0 - 16 + i * 3, y, kz0 + 6, 0, 'kart');
+  for (let i = 0; i < 18; i++) {
+    const t = (i / 18) * Math.PI * 2;
+    const cxk = kx0 + Math.cos(t) * 13;
+    const czk = kz0 + Math.sin(t) * 5;
+    if (b.hasModel('cars/cone')) b.model('cars/cone', cxk, y, czk, 0, 0.9, { collide: 'none' });
+  }
+  b.sign('ゴーカート', kx0, y + 3, kz0 - 11.5, 0, 5, 1.0, '#ff5d5d', '#ffffff', true);
   // ジェットコースター（見た目だけ。フェーズ4で乗れるように）
   for (let i = 0; i < 40; i++) {
     const t = (i / 40) * Math.PI * 2;
@@ -1042,6 +1087,7 @@ function buildCountry(w: World, lot: Lot) {
   b.house(fx, fz, y, 12, 9, rng.chance(0.5) ? 0 : Math.PI, '#d9c7a5', '#3b3b3b', 1);
   b.building(fx + 13, fz, y, 7, 8, 4.5, '#8a5a3a', 0, 'house');
   vehicle(w, fx + 13, y, fz + 8, Math.PI / 2, 'truck');
+  vehicle(w, fx - 6, y, fz + 8, Math.PI / 2, rng.chance(0.6) ? 'tractor' : 'bicycle');
   b.tree(fx - 9, fz + 2, y, 1.1, 'round');
   for (let i = 0; i < 3; i++) b.sphere(fx - 9 + rng.range(-1, 1), y + 2.8 + rng.range(0, 1), fz + 2 + rng.range(-1, 1), 0.18, '#f28c28');
   // 無人販売所
@@ -1070,5 +1116,7 @@ function buildCountry(w: World, lot: Lot) {
     b.box('plain', sx, y, sz, 1.4, 1.2, 1.2, '#8a6a4a');
     b.batch.add('roof', WorldBuilder.mat(sx, y + 1.2, sz, 0, 1.9, 0.6, 1.6), '#3b3b3b');
     item(w, 'manju', sx, y + 0.62, sz + 0.75, 'shrine');
+    weapon(w, 'caltrops', sx + 2, y, sz + 1.5);
   }
+  if (lot.cx0 === -300 && lot.cz0 === -100) weapon(w, 'chainsaw', fx + 13, y, fz - 5);
 }

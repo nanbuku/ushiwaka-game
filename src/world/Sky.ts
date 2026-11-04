@@ -30,6 +30,7 @@ export class SkySystem {
     uSunDir: { value: new THREE.Vector3() },
     uSunColor: { value: new THREE.Color(1, 0.9, 0.7) },
     uNight: { value: 0 },
+    uTime: { value: 0 },
   };
 
   constructor(private scene: THREE.Scene) {
@@ -60,9 +61,13 @@ export class SkySystem {
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }`,
       fragmentShader: /* glsl */ `
-        uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uNight;
+        uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uNight; uniform float uTime;
         varying vec3 vDir;
         float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+        float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float n2(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(h2(i), h2(i + vec2(1.0, 0.0)), u.x), mix(h2(i + vec2(0.0, 1.0)), h2(i + vec2(1.0, 1.0)), u.x), u.y); }
+        float fbm2(vec2 p){ float v = 0.0; float a = 0.5; for (int k = 0; k < 5; k++) { v += a * n2(p); p *= 2.02; a *= 0.5; } return v; }
         void main() {
           vec3 d = normalize(vDir);
           float h = d.y;
@@ -77,6 +82,16 @@ export class SkySystem {
             vec3 cell = floor(d * 260.0);
             float st = step(0.9972, hash(cell));
             col += vec3(st) * uNight * smoothstep(0.0, 0.3, h) * 0.9;
+          }
+          // 流れる雲
+          if (h > 0.0) {
+            vec2 uv = d.xz / (h + 0.12) * 0.55 + vec2(uTime * 0.004, uTime * 0.0015);
+            float c = smoothstep(0.5, 0.82, fbm2(uv * 1.6));
+            float shade = fbm2(uv * 3.1 + 7.0);
+            vec3 cloudCol = mix(vec3(1.0, 1.0, 1.0), vec3(0.72, 0.76, 0.84), shade * 0.7);
+            cloudCol = mix(cloudCol, uHorizon * 0.9 + vec3(0.1), clamp(1.0 - h * 3.0, 0.0, 1.0) * 0.5);
+            cloudCol *= mix(1.0, 0.18, uNight);
+            col = mix(col, cloudCol, c * smoothstep(0.0, 0.18, h) * 0.9);
           }
           gl_FragColor = vec4(col, 1.0);
           #include <colorspace_fragment>
@@ -112,6 +127,7 @@ export class SkySystem {
     this.uniforms.uHorizon.value.copy(hor);
     this.uniforms.uSunDir.value.copy(this.sunDir);
     this.uniforms.uNight.value = this.night;
+    this.uniforms.uTime.value += dt * 60;
     this.fog.color.copy(hor);
 
     // 太陽または月

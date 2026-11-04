@@ -24,7 +24,14 @@ export type Sfx =
   | 'horn'
   | 'crash'
   | 'boom'
-  | 'fuse';
+  | 'fuse'
+  | 'pop'
+  | 'whoosh'
+  | 'bat'
+  | 'whistle'
+  | 'glass'
+  | 'beep'
+  | 'mega';
 
 /** WebAudio で効果音をその場で合成する（素材ファイル不要） */
 export class AudioSys {
@@ -174,6 +181,32 @@ export class AudioSys {
       case 'fuse':
         this.noiseHit(out, t, 0.5, 'highpass', 5000, 0.25);
         break;
+      case 'whoosh':
+        this.noiseHit(out, t, 0.18, 'bandpass', 900, 0.4);
+        break;
+      case 'bat':
+        this.tone(out, t, 'triangle', 1900, 1700, 0.5, 0.6);
+        this.tone(out, t, 'sine', 2850, 2600, 0.35, 0.3);
+        this.noiseHit(out, t, 0.05, 'highpass', 3000, 0.8);
+        break;
+      case 'whistle':
+        this.tone(out, t, 'sine', 900, 2600, 0.7, 0.35);
+        this.noiseHit(out, t, 0.6, 'bandpass', 3000, 0.25);
+        break;
+      case 'glass':
+        for (let i = 0; i < 5; i++) this.tone(out, t + i * 0.02, 'triangle', 3000 + Math.random() * 2500, 2000, 0.2, 0.25);
+        this.noiseHit(out, t, 0.25, 'highpass', 4000, 0.6);
+        break;
+      case 'beep':
+        this.tone(out, t, 'square', 1760, 1760, 0.07, 0.25);
+        break;
+      case 'mega':
+        this.tone(out, t, 'sine', 2400, 3200, 0.35, 0.3);
+        break;
+      case 'pop':
+        this.noiseHit(out, t, 0.12, 'bandpass', 1800, 1.0);
+        this.noiseHit(out, t + 0.1, 0.6, 'highpass', 3000, 0.3);
+        break;
     }
   }
 
@@ -260,6 +293,113 @@ export class AudioSys {
     if (!(devil && pos % 2 === 1)) note(chord[arp] + oct, eighth * 1.8, devil ? 'sawtooth' : 'sine', devil ? 0.12 : 0.3);
     if (!devil && pos === 6 && bar % 2 === 1) note(chord[2] + 24, eighth * 2, 'sine', 0.12);
     if (devil && pos === 0) note(chord[0] - 12, eighth * 8, 'sawtooth', 0.08);
+  }
+
+  // ---------- 環境音（街のざわめき・セミ・鳥・虫・横断歩道の音） ----------
+  private amb: { hum: GainNode; cicada: GainNode } | null = null;
+  private birdT = 2;
+  private cricketT = 1;
+  private piyoT = 0;
+
+  ambience(dt: number, o: { district: string; night: number; nearAvenue: boolean; inside: boolean }) {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running') return;
+    if (!this.amb) {
+      const loop = (filter: BiquadFilterType, freq: number, q: number) => {
+        const s = ctx.createBufferSource();
+        s.buffer = this.noise;
+        s.loop = true;
+        const f = ctx.createBiquadFilter();
+        f.type = filter;
+        f.frequency.value = freq;
+        f.Q.value = q;
+        const g = ctx.createGain();
+        g.gain.value = 0;
+        s.connect(f).connect(g).connect(this.master);
+        s.start();
+        return g;
+      };
+      const hum = loop('lowpass', 320, 0.7);
+      const cicadaRaw = loop('bandpass', 4700, 5);
+      // セミ: 音量をゆらす
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 38;
+      const lg = ctx.createGain();
+      lg.gain.value = 0.5;
+      const cic = ctx.createGain();
+      cic.gain.value = 0.5;
+      cicadaRaw.disconnect();
+      cicadaRaw.connect(cic).connect(this.master);
+      lfo.connect(lg).connect(cic.gain);
+      lfo.start();
+      this.amb = { hum, cicada: cicadaRaw };
+    }
+    const d = o.district;
+    const busy = d === 'city' || d === 'downtown' ? 0.07 : d === 'town' || d === 'civic' || d === 'riverside' ? 0.04 : d === 'amusement' ? 0.035 : d === 'park' ? 0.02 : 0.008;
+    const natural = d === 'park' || d.startsWith('country') ? 1 : d === 'town' || d === 'civic' ? 0.5 : 0.15;
+    const day = 1 - o.night;
+    const ins = o.inside ? 0.35 : 1;
+    const t = ctx.currentTime;
+    this.amb.hum.gain.setTargetAtTime(busy * ins, t, 0.8);
+    this.amb.cicada.gain.setTargetAtTime(0.03 * natural * day * day * ins, t, 0.8);
+    // 鳥（昼）
+    this.birdT -= dt;
+    if (this.birdT < 0) {
+      this.birdT = 1.5 + Math.random() * 4 / Math.max(0.2, natural);
+      if (day > 0.5 && natural > 0.3) {
+        const base = 2200 + Math.random() * 1600;
+        const n = 2 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < n; i++) this.tone(this.master, t + i * 0.11, 'sine', base, base * 1.35, 0.07, 0.04 * natural * ins);
+      }
+    }
+    // 虫（夜）
+    this.cricketT -= dt;
+    if (this.cricketT < 0) {
+      this.cricketT = 0.6 + Math.random() * 0.9;
+      if (o.night > 0.5 && natural > 0.3) for (let i = 0; i < 3; i++) this.tone(this.master, t + i * 0.06, 'triangle', 4300, 4250, 0.04, 0.025 * natural * ins);
+    }
+    // 横断歩道の「ピヨピヨ」
+    this.piyoT -= dt;
+    if (this.piyoT < 0) {
+      this.piyoT = 1.1;
+      if (o.nearAvenue && !o.inside) {
+        this.tone(this.master, t, 'sine', 2600, 3100, 0.09, 0.05);
+        this.tone(this.master, t + 0.18, 'sine', 2600, 3100, 0.09, 0.05);
+      }
+    }
+  }
+
+  // ---------- チェーンソー（押している間ずっと鳴る） ----------
+  private saw: { osc: OscillatorNode; lfo: OscillatorNode; gain: GainNode } | null = null;
+  sawOn() {
+    const ctx = this.ctx;
+    if (!ctx || this.saw) return;
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 140;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 28;
+    const lg = ctx.createGain();
+    lg.gain.value = 30;
+    lfo.connect(lg).connect(osc.frequency);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1600;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    osc.connect(lp).connect(gain).connect(this.master);
+    osc.start();
+    lfo.start();
+    gain.gain.linearRampToValueAtTime(0.32, ctx.currentTime + 0.08);
+    this.saw = { osc, lfo, gain };
+  }
+  sawOff() {
+    if (!this.saw || !this.ctx) return;
+    const s = this.saw;
+    this.saw = null;
+    s.gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.15);
+    s.osc.stop(this.ctx.currentTime + 0.2);
+    s.lfo.stop(this.ctx.currentTime + 0.2);
   }
 
   // ---------- エンジン音（運転中ずっと鳴る） ----------

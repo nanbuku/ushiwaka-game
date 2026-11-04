@@ -66,6 +66,11 @@ export class CameraRig {
     const hit = g.physics.raycast(this.focus, this.dir, d + 0.25, G.STATIC | G.VEHICLE, p.driving?.collider);
     if (hit) d = Math.max(0.3, hit.dist - 0.22);
     const cam = g.camera;
+    const fov = 62 + (v ? clamp(Math.abs(v.speed) / 40, 0, 1) * 14 : 0);
+    if (Math.abs(cam.fov - fov) > 0.05) {
+      cam.fov += (fov - cam.fov) * damp(3, dt);
+      cam.updateProjectionMatrix();
+    }
     cam.position.copy(this.focus).addScaledVector(this.dir, d);
     if (cam.position.y < 0.12) cam.position.y = 0.12;
     if (this.shake > 0) {

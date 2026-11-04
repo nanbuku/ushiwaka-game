@@ -95,13 +95,19 @@ export class Requests {
     if (this.complete) this.game.hud.toast('おつかい達成！ なんくに報告しよう', c.mode === 'devil' ? 'evil' : 'good', 5);
   }
 
-  /** 届け物がおつかいに合っていれば進める */
-  onDeliver(it: WorldItem): boolean {
+  /** この物がおつかいの届け物に当てはまるか */
+  matches(it: WorldItem) {
     const c = this.current;
-    if (!c || c.crime || this.complete) return false;
+    if (!c || c.crime) return false;
     if (c.item && it.def.id !== c.item) return false;
     if (c.category && it.def.category !== c.category) return false;
     if (c.fromDistrict && this.game.world.district(it.origin.x, it.origin.z) !== c.fromDistrict) return false;
+    return true;
+  }
+
+  /** 届け物がおつかいに合っていれば進める */
+  onDeliver(it: WorldItem): boolean {
+    if (this.complete || !this.matches(it)) return false;
     this.progress++;
     return true;
   }

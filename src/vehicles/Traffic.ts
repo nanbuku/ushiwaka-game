@@ -9,7 +9,7 @@ import { Vehicle, type Lane } from './Vehicle';
 import type { VehicleKind } from './VehicleModel';
 
 const key = (x: number, z: number) => `${x},${z}`;
-const TRAFFIC_KINDS: Partial<Record<VehicleKind, number>> = { sedan: 60, taxi: 15, van: 12, truck: 8, scooter: 5 };
+const TRAFFIC_KINDS: Partial<Record<VehicleKind, number>> = { sedan: 48, taxi: 12, van: 10, truck: 7, sports: 5, police: 4, garbage: 3, scooter: 4, motorbike: 4, bicycle: 3 };
 
 /** 交通（走る車）と駐車中の乗り物、乗り降り、ひき逃げの判定 */
 export class Traffic {
@@ -106,7 +106,8 @@ export class Traffic {
         v.sync(0);
       } else if (v.ai) this.stepAI(v, dt);
       else {
-        v.speed *= 1 - Math.min(1, dt * 2);
+        // 無人の車（乗り捨て・飛び降り後）は惰性で進む
+        if (Math.abs(v.speed) > 0.05 || v.burnT >= 0 || v.hp < 35) v.drive(dt, null);
         v.sync(dt);
       }
     }
@@ -153,7 +154,7 @@ export class Traffic {
     v.brakeT -= dt;
     v.honkCd -= dt;
     // 前方の障害物
-    let target = ai.turn ? 5.5 : lane.cruise;
+    let target = Math.min(ai.turn ? 5.5 : lane.cruise, v.spec.maxSpeed * 0.8);
     const fx = Math.sin(v.yaw);
     const fz = Math.cos(v.yaw);
     const check = (x: number, z: number, near: number, stopDist: number) => {
@@ -230,7 +231,7 @@ export class Traffic {
       for (const n of g.npcs.list) {
         if (!n.alive || !v.contains(n.pos, n.radius + 0.1)) continue;
         const dir = new THREE.Vector3(Math.sin(v.yaw), 0, Math.cos(v.yaw)).multiplyScalar(Math.sign(v.speed));
-        if (v === pv) {
+        if (v === pv || (!v.ai && v.playerT < 10)) {
           if (sp > 9) {
             n.fling(dir.multiplyScalar(sp * 0.7).add(new THREE.Vector3(rand.range(-2, 2), 5 + sp * 0.25, rand.range(-2, 2))));
             g.karma.crime('kill', n.pos, n.kind, 1, 'car');
@@ -297,10 +298,11 @@ export class Traffic {
       g.npcs.list.push(n);
       n.scare(v.pos, 0.3);
       g.hud.popText(n.headPos(), rand.pick(['ちょっと!? 私の車!', '犬が運転してる!?', 'うそでしょ!?']), '#ffffff', 22);
-      g.karma.crime('steal', v.pos, '車');
+      g.karma.crime('steal', v.pos, v.spec.name);
     } else if (v.persistent) {
-      g.karma.crime('steal', v.pos, v.kind === 'scooter' ? 'スクーター' : '車');
+      g.karma.crime('steal', v.pos, v.spec.name);
     }
+    if (v.kind === 'police' || v.kind === 'catcherVan') g.heat.value = Math.min(5.99, g.heat.value + 0.6);
     v.ai = null;
     v.driver = 'player';
     v.speed = 0;
@@ -309,7 +311,6 @@ export class Traffic {
 
   unboard(v: Vehicle) {
     v.driver = 'none';
-    v.speed = 0;
     this.game.audio.engineOff();
   }
 }

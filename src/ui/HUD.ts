@@ -39,6 +39,8 @@ export class HUD {
   private request!: HTMLDivElement;
   private captureEl!: HTMLDivElement;
   private speedo!: HTMLDivElement;
+  private weaponsEl!: HTMLDivElement;
+  private crosshair!: HTMLDivElement;
   private v = new THREE.Vector3();
   private miniT = 0;
 
@@ -60,10 +62,13 @@ export class HUD {
       <div class="capture"><div class="capture-label">つかまりそう！ 走って逃げろ！</div><div class="capture-bar"><div></div></div></div>
       <div class="prompt"></div>
       <div class="speedo hidden"></div>
+      <div class="panel weapons"></div>
+      <div class="crosshair hidden">+</div>
       <div class="charge"><div></div></div>
       <div class="toasts"></div>
       <canvas class="minimap" width="200" height="200"></canvas>
-      <div class="help">WASD 移動 / Shift 走る / Space ジャンプ / 左クリック 噛む / 右クリック 吠える（長押しで大吠え） / E くわえる・話す / Q 投げる / F 乗り物 / M 地図 / N 音楽</div>
+      <div class="help">WASD 移動 / Shift 走る / Space ジャンプ / 左クリック 噛む / 右クリック 吠える（長押しで大吠え） / E くわえる・話す / Q 投げる / F 乗り物 / 1〜8・R 武器 / G 起爆 / M 地図 / N 音楽</div>
+      <div class="vignette"></div>
       <div class="flash"></div>
       <div class="fade"></div>
       <canvas class="bigmap hidden" width="720" height="720"></canvas>
@@ -91,6 +96,8 @@ export class HUD {
     this.request = q('.request');
     this.captureEl = q('.capture');
     this.speedo = q('.speedo');
+    this.weaponsEl = q('.weapons');
+    this.crosshair = q('.crosshair');
     this.setGameUIVisible(false);
   }
 
@@ -117,6 +124,7 @@ export class HUD {
         <div><b>WASD</b> 移動　<b>Shift</b> 走る　<b>Space</b> ジャンプ　<b>マウス</b> カメラ</div>
         <div><b>左クリック</b> 噛みつく　<b>右クリック</b> 吠える（長押しで大吠え）</div>
         <div><b>E</b> くわえる・はなす・話す　<b>Q</b> 投げる　<b>F</b> 乗り物に乗る・降りる　<b>M</b> 地図　<b>N</b> 音楽　<b>Esc</b> 一時停止</div>
+        <div><b>1〜8 / R</b> 武器の持ち替え　<b>G</b> 仕掛けた爆弾を起爆（武器は街のあちこちに落ちている）</div>
       </div>
       <div class="note">音が出ます。クリックするとマウスがゲーム画面に固定されます（Escで解除）。</div>`;
     this.overlay.querySelector('.new')?.addEventListener('click', () => onStart(true));
@@ -255,6 +263,50 @@ export class HUD {
       }
   }
 
+  /** 大きい地図: 地区名・自分・なんくの家・目的地・武器 */
+  private drawBig() {
+    const g = this.game;
+    const b = this.bigMap.getContext('2d')!;
+    if (!this.bigBase) {
+      this.bigBase = document.createElement('canvas');
+      this.bigBase.width = this.bigMap.width;
+      this.bigBase.height = this.bigMap.height;
+      this.bigBase.getContext('2d')!.drawImage(this.bigMap, 0, 0);
+    }
+    b.drawImage(this.bigBase, 0, 0);
+    const tx = (x: number) => (x + 360) * MAP_SCALE;
+    const dot = (x: number, z: number, r: number, fill: string, stroke = '#222') => {
+      b.beginPath();
+      b.arc(tx(x), tx(z), r, 0, Math.PI * 2);
+      b.fillStyle = fill;
+      b.fill();
+      b.strokeStyle = stroke;
+      b.lineWidth = 2;
+      b.stroke();
+    };
+    for (const k of g.weapons.pickups) if (k.active) dot(k.x, k.z, 4, '#ff9f1c');
+    b.font = 'bold 13px "M PLUS Rounded 1c", sans-serif';
+    b.textAlign = 'left';
+    for (const t of g.guide.targets) {
+      dot(t.x, t.z, 7, '#ffd23f', '#5a4300');
+      b.fillStyle = 'rgba(0,0,0,0.6)';
+      b.fillText(t.label, tx(t.x) + 10, tx(t.z) + 5);
+      b.fillStyle = '#fff3b0';
+      b.fillText(t.label, tx(t.x) + 9, tx(t.z) + 4);
+    }
+    const h = g.nanku.pos;
+    b.fillStyle = g.karma.mode === 'devil' ? '#ff2a55' : '#ff7eb6';
+    b.font = 'bold 20px sans-serif';
+    b.textAlign = 'center';
+    b.textBaseline = 'middle';
+    b.fillText('♥', tx(h.x), tx(h.z));
+    const p = g.player.pos;
+    dot(p.x, p.z, 6, '#ffffff', '#000');
+    b.textBaseline = 'alphabetic';
+  }
+
+  private bigBase: HTMLCanvasElement | null = null;
+
   private drawMini() {
     const g = this.game;
     const ctx = this.miniCtx;
@@ -278,6 +330,37 @@ export class HUD {
       if (Math.abs(dx) > 110 || Math.abs(dz) > 110) continue;
       ctx.fillStyle = !n.alive ? '#5a0a0a' : n.state === 'flee' || n.state === 'startle' ? '#ff4040' : n.state === 'faint' ? '#ffd23f' : '#ffffff';
       ctx.fillRect(dx - 1.6, dz - 1.6, 3.2, 3.2);
+    }
+    // 武器が落ちている場所
+    for (const k of g.weapons.pickups) {
+      if (!k.active) continue;
+      const dx = k.x - p.x;
+      const dz = k.z - p.z;
+      if (Math.abs(dx) > 110 || Math.abs(dz) > 110) continue;
+      ctx.fillStyle = '#ff9f1c';
+      ctx.beginPath();
+      ctx.arc(dx, dz, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // おつかいの目的地（範囲外なら縁に出す）
+    const limT = W / 2 / zoom - 9;
+    for (const t of g.guide.targets) {
+      let dx = t.x - p.x;
+      let dz = t.z - p.z;
+      const dd = Math.hypot(dx, dz);
+      if (dd > limT) {
+        dx = (dx / dd) * limT;
+        dz = (dz / dd) * limT;
+      }
+      ctx.save();
+      ctx.translate(dx, dz);
+      ctx.rotate(-g.camRig.yaw + Math.PI / 4);
+      ctx.fillStyle = '#ffd23f';
+      ctx.strokeStyle = '#5a4300';
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(-4.5, -4.5, 9, 9);
+      ctx.strokeRect(-4.5, -4.5, 9, 9);
+      ctx.restore();
     }
     // 家
     const h = g.nanku.pos;
@@ -338,7 +421,9 @@ export class HUD {
     (this.charge.firstElementChild as HTMLDivElement).style.width = `${ch * 100}%`;
     this.charge.classList.toggle('full', ch >= 1);
 
-    this.bigMap.classList.toggle('hidden', !g.input.down('KeyM') && !g.input.down('Tab'));
+    const showBig = g.input.down('KeyM') || g.input.down('Tab');
+    this.bigMap.classList.toggle('hidden', !showBig);
+    if (showBig) this.drawBig();
 
     // 通報レベル
     const lv = g.heat.level;
@@ -347,12 +432,23 @@ export class HUD {
     for (let i = 0; i < 5; i++) icons += `<i class="${i < lv ? 'on' : i === lv && part > 0.05 ? 'half' : ''}"></i>`;
     if (this.heatIcons.innerHTML !== icons) this.heatIcons.innerHTML = icons;
     this.heatBox.classList.toggle('seen', g.heat.seen && lv > 0);
-    // おつかい
+    // おつかい（目的地の方向と距離）
     const rl = g.requests.label;
     this.request.classList.toggle('hidden', !rl);
-    const rt = rl ? `<b>おつかい</b>　${rl}` : '';
+    const gb = g.guide.best;
+    const nav = gb
+      ? `<div class="nav"><i style="transform: rotate(${g.guide.arrowAngle()}rad)">▲</i> ${gb.label}　<b>${Math.round(gb.dist)}m</b></div>`
+      : g.guide.note
+        ? `<div class="nav note">${g.guide.note}</div>`
+        : '';
+    const rt = rl ? `<b>おつかい</b>　${rl}${nav}` : '';
     if (this.request.innerHTML !== rt) this.request.innerHTML = rt;
     this.request.classList.toggle('done', g.requests.complete);
+    // 武器
+    const wh = g.weapons.hud;
+    const wt = `<div class="w-cur">${wh.name} <span>${wh.ammo === '∞' ? '' : '×' + wh.ammo}</span></div>` + `<div class="w-list">${wh.owned.map((o) => `<span class="${o.id === wh.current ? 'on' : ''}">${o.key} ${o.name}${o.ammo === '∞' ? '' : ' ' + o.ammo}</span>`).join('')}</div>` + (wh.charges ? `<div class="w-c4">仕掛けた爆弾 ${wh.charges}個　<b>G</b> で起爆</div>` : '');
+    if (this.weaponsEl.innerHTML !== wt) this.weaponsEl.innerHTML = wt;
+    this.crosshair.classList.toggle('hidden', !wh.aim || !!g.player.driving);
     // 速度計
     const dv = g.player.driving;
     this.speedo.classList.toggle('hidden', !dv);

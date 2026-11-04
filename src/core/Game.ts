@@ -5,6 +5,8 @@ import { Capture } from '../gameplay/Capture';
 import { Heat } from '../gameplay/Heat';
 import { NewsTV } from '../gameplay/News';
 import { Requests } from '../gameplay/Requests';
+import { Guide } from '../gameplay/Guide';
+import { Arsenal } from '../gameplay/Weapons';
 import { ItemSystem } from '../gameplay/Items';
 import { Karma } from '../gameplay/Karma';
 import { Nanku } from '../gameplay/Nanku';
@@ -50,6 +52,8 @@ export class Game {
   capture = new Capture(this);
   requests = new Requests(this);
   news = new NewsTV(this);
+  weapons = new Arsenal(this);
+  guide = new Guide(this);
   sky!: SkySystem;
   world!: World;
   fx!: Effects;
@@ -63,6 +67,8 @@ export class Game {
   dialogue!: Dialogue;
   paused = true;
   started = false;
+  /** テストで時間を手動で進めている間は true */
+  manual = false;
   frame = 0;
   testMode = new URLSearchParams(location.search).has('test');
   private lastT = performance.now();
@@ -105,6 +111,7 @@ export class Game {
     this.nanku = new Nanku(this);
     this.npcs = new NPCManager(this);
     this.traffic = new Traffic(this);
+    this.weapons.init();
     this.dialogue = new Dialogue(this, document.body);
     this.hud.buildMap();
     this.player.teleport(this.world.spawn, this.world.spawnYaw);
@@ -187,48 +194,51 @@ export class Game {
   }
 
   /** 爆発（爆弾） */
-  explode(pos: THREE.Vector3, byPlayer: boolean) {
+  explode(pos: THREE.Vector3, byPlayer: boolean, scale = 1) {
     const gy = this.world.groundHeight(pos.x, pos.z);
-    this.fx.explosion(pos, gy);
-    this.audio.play('boom', pos, 1);
-    this.camRig.addShake(Math.max(0, 1.8 - this.camera.position.distanceTo(pos) / 22));
+    this.fx.explosion(pos, gy, scale);
+    this.audio.play('boom', pos, Math.min(1, 0.6 + scale * 0.4));
+    this.camRig.addShake(Math.max(0, (1.8 - this.camera.position.distanceTo(pos) / 22) * Math.min(1.4, scale)));
     let kills = 0;
     let faints = 0;
+    const R = 5 * scale;
     for (const n of this.npcs.list) {
       const dx = n.pos.x - pos.x;
       const dz = n.pos.z - pos.z;
       const d = Math.hypot(dx, dz);
-      if (d > 8.5) continue;
+      if (d > R * 1.7) continue;
       const dir = new THREE.Vector3(dx, 0, dz).normalize();
-      if (d < 5) {
+      if (d < R) {
         if (n.alive) kills++;
-        n.fling(dir.multiplyScalar(14 - d * 2).add(new THREE.Vector3(0, 10 - d, 0)));
+        n.fling(dir.multiplyScalar((14 - (d / R) * 10) * Math.min(1.5, scale)).add(new THREE.Vector3(0, (10 - (d / R) * 5) * Math.min(1.4, scale), 0)));
+        if (Math.random() < 0.5) n.char();
       } else if (n.conscious) {
         n.faint();
         faints++;
       }
     }
-    this.npcs.panicAround(pos, 45);
+    this.npcs.panicAround(pos, 45 * Math.min(1.5, scale));
     for (const v of this.traffic.list) {
       const d = Math.hypot(v.pos.x - pos.x, v.pos.z - pos.z);
-      if (d > 7.5) continue;
+      if (d > R * 1.5) continue;
       if (v === this.player.driving) this.player.exitVehicle();
       const dir = v.pos.clone().sub(pos).setY(0).normalize();
-      v.blast(dir.multiplyScalar(10 - d).add(new THREE.Vector3(0, 12 - d, 0)));
+      v.blast(dir.multiplyScalar((10 - (d / R) * 5) * scale).add(new THREE.Vector3(0, (12 - (d / R) * 6) * scale, 0)));
     }
     const dp = this.player.pos.distanceTo(pos);
-    if (dp < 5.5) {
-      this.player.hurt(75 - dp * 12, pos);
+    if (dp < R * 1.1 && !this.player.driving) {
+      this.player.hurt((75 - (dp / R) * 60) * Math.min(1.3, scale), pos);
       this.player.vel.add(this.player.pos.clone().sub(pos).setY(0).normalize().multiplyScalar(9).setY(7));
     }
     for (const it of this.items.list) {
       if (!it.body) continue;
       const d = it.obj.position.distanceTo(pos);
-      if (d < 7) {
+      if (d < R * 1.4) {
         const dir = it.obj.position.clone().sub(pos).normalize();
         it.body.applyImpulse({ x: dir.x * 0.4, y: 0.6, z: dir.z * 0.4 }, true);
       }
     }
+    this.weapons.onExplosion(pos, R);
     if (this.nanku.pos.distanceTo(pos) < 10) this.hud.popText(this.nanku.headPos(), this.karma.mode === 'devil' ? 'たーまやー！' : 'きゃあっ！', '#ff4d6d', 26);
     if (byPlayer) {
       this.karma.crime('bomb', pos);
@@ -242,9 +252,40 @@ export class Game {
     const dt = Math.min((now - this.lastT) / 1000, 1 / 20);
     this.lastT = now;
     this.frame++;
-    if (!this.paused && this.started) {
+    if (!this.paused && this.started && !this.manual) {
+      this.step(dt);
+    } else if (!this.started) {
+      // タイトル画面ではゆっくりカメラを回す
+      this.camRig.yaw += dt * 0.08;
+      this.sky.update(dt * 0.2, this.player.pos, this.camera.position);
+      this.world.update(dt);
+    }
+    if (!this.manual) this.camRig.update(dt);
+    this.audio.setListener(this.camera.position, this.camRig.yaw);
+    this.hud.update(dt);
+    this.input.endFrame();
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  /** テスト用: 描画とは別に、ゲームの時間を一定の刻みで進める */
+  simulate(seconds: number, dt = 1 / 60, each?: (t: number) => void) {
+    this.manual = true;
+    for (let t = 0; t < seconds; t += dt) {
+      each?.(t);
+      this.step(dt);
+      this.camRig.update(dt);
+      this.input.endFrame();
+    }
+    this.manual = false;
+  }
+
+  /** 1フレーム分のゲームの更新 */
+  step(dt: number) {
+    {
       this.dialogue.update(dt);
       this.player.update(dt);
+      this.weapons.update(dt);
+      this.guide.update(dt);
       this.npcs.update(dt);
       this.traffic.update(dt);
       this.heat.update(dt);
@@ -261,6 +302,14 @@ export class Game {
         this.hud.toast(on ? '音楽: ON' : '音楽: OFF', 'info', 1.5);
       }
       this.audio.musicMode = this.karma.mode;
+      {
+        const pp = this.player.pos;
+        const ax = Math.abs(pp.x);
+        const az = Math.abs(pp.z);
+        const nearAvenue = (Math.abs(ax - 100) < 16 && (az < 16 || Math.abs(az - 100) < 16 || Math.abs(az - 200) < 16)) || (Math.abs(az - 100) < 16 && (ax < 16 || Math.abs(ax - 200) < 16));
+        const inside = !!this.world.zoneAt(pp.x, pp.z) && this.world.zoneAt(pp.x, pp.z) !== 'pound';
+        this.audio.ambience(dt, { district: this.world.district(pp.x, pp.z), night: this.sky.night, nearAvenue, inside });
+      }
       this.saveT += dt;
       if (this.saveT > 30) {
         this.saveT = 0;
@@ -275,16 +324,6 @@ export class Game {
           this.hud.fade(false);
         }
       }
-    } else if (!this.started) {
-      // タイトル画面ではゆっくりカメラを回す
-      this.camRig.yaw += dt * 0.08;
-      this.sky.update(dt * 0.2, this.player.pos, this.camera.position);
-      this.world.update(dt);
     }
-    this.camRig.update(dt);
-    this.audio.setListener(this.camera.position, this.camRig.yaw);
-    this.hud.update(dt);
-    this.input.endFrame();
-    this.renderer.render(this.scene, this.camera);
   }
 }

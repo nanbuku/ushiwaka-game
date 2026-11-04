@@ -30,6 +30,7 @@ body {
 .hud > .meter,
 .hud > .status,
 .hud > .request,
+.hud > .weapons,
 .hud > .minimap,
 .hud > .help,
 .hud > .prompt,
@@ -530,4 +531,75 @@ body {
 }
 .hud:not(.ingame) > .speedo {
   display: none;
+}
+
+.weapons {
+  position: absolute;
+  right: 16px;
+  bottom: 46px;
+  min-width: 220px;
+  text-align: right;
+}
+.hud.ingame > .weapons {
+  display: block;
+}
+.w-cur {
+  font-size: 18px;
+  font-weight: 800;
+}
+.w-cur span {
+  font-size: 14px;
+  opacity: 0.85;
+}
+.w-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 8px;
+  font-size: 11px;
+  margin-top: 4px;
+  opacity: 0.8;
+}
+.w-list span.on {
+  color: #ffd166;
+  font-weight: 800;
+  opacity: 1;
+}
+.w-c4 {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #ff6b6b;
+  font-weight: 700;
+}
+.crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 28px;
+  font-weight: 300;
+  color: #fff;
+  text-shadow: 0 0 4px #000;
+}
+
+.request .nav {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #ffe58a;
+}
+.request .nav i {
+  display: inline-block;
+  font-style: normal;
+  color: #ffd23f;
+  margin-right: 4px;
+}
+.request .nav.note {
+  color: #d9d9d9;
+  font-size: 12px;
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 58%, rgba(10, 6, 0, 0.32) 100%);
 }

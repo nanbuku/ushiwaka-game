@@ -3,6 +3,17 @@ import type { Game } from '../core/Game';
 import type { ItemDef } from './Items';
 
 export type CrimeKind = 'bite' | 'kill' | 'steal' | 'shrine' | 'faint' | 'bomb';
+export type KillCause = 'bite' | 'car' | 'bomb' | 'fire' | 'bat' | 'saw' | 'spikes' | 'shock';
+const HOW: Record<KillCause, string> = {
+  bite: 'を噛み殺した…',
+  car: 'をはねた…',
+  bomb: 'を爆発に巻き込んだ…',
+  fire: 'を燃やした…',
+  bat: 'をバットでかっ飛ばした…',
+  saw: 'をチェーンソーで切り刻んだ…',
+  spikes: 'が撒菱の傷で力尽きた…',
+  shock: 'がショック死した…',
+};
 
 const VICTIM: Record<string, string> = {
   man: '男の人',
@@ -41,7 +52,7 @@ export class Karma {
     return 3;
   }
 
-  crime(kind: CrimeKind, pos: THREE.Vector3, detail = '', count = 1, cause: 'bite' | 'car' | 'bomb' = 'bite') {
+  crime(kind: CrimeKind, pos: THREE.Vector3, detail = '', count = 1, cause: KillCause = 'bite') {
     const g = this.game;
     g.heat.report(kind, pos, detail === 'catcher');
     g.requests.onCrime(kind, detail, pos, count);
@@ -57,7 +68,7 @@ export class Karma {
       case 'kill': {
         this.stats.kills += count;
         const who = count > 1 ? `${count}人` : VICTIM[detail] ?? '人';
-        const how = cause === 'car' ? 'をはねた…' : cause === 'bomb' ? 'を爆発に巻き込んだ…' : 'を噛み殺した…';
+        const how = HOW[cause];
         g.hud.toast(`${who}${how}　悪行 +${pts}`, 'bad');
         break;
       }
