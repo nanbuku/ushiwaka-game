@@ -19,6 +19,8 @@ export interface DogAnimState {
   down: boolean;
   /** 乗り物に座っている */
   sit?: boolean;
+  /** 滑空中（耳をパタパタ） */
+  glide?: boolean;
 }
 
 const WHITE = '#fefdfb';
@@ -210,8 +212,8 @@ export class DogModel {
     // 耳・しっぽ
     for (let i = 0; i < 2; i++) {
       const sx = i === 0 ? -1 : 1;
-      const flop = Math.sin(this.phase + i) * 0.18 * amp + clamp(s.vy * 0.06, -0.3, 0.3) + bark * 0.3;
-      this.ears[i].rotation.z = sx * (0.55 + flop);
+      const flop = s.glide ? 1.1 + Math.sin(t * 28 + i) * 0.5 : Math.sin(this.phase + i) * 0.18 * amp + clamp(s.vy * 0.06, -0.3, 0.3) + bark * 0.3;
+      this.ears[i].rotation.z = sx * (0.15 + flop);
     }
     const wagSpeed = 9 + s.happy * 9;
     this.tail.rotation.y = Math.sin(t * wagSpeed) * (0.3 + s.happy * 0.4);

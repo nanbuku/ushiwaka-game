@@ -100,7 +100,7 @@ export class Traffic {
     }
 
     for (const v of this.list) {
-      if (v.driver === 'player') continue;
+      if (v.driver === 'player' || (v.external && !v.wrecked)) continue;
       if (v.wrecked) {
         v.updateWreck(dt);
         v.sync(0);

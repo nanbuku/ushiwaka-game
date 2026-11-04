@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import { G, groups, quatY, RAPIER } from '../core/Physics';
 import { clamp, damp, rand } from '../core/Rng';
+import { BREAK_SPEED } from '../world/Destruction';
 import { VehicleModel, type VehicleKind, type VehicleSpec } from './VehicleModel';
 
 export interface Lane {
@@ -70,6 +71,8 @@ export class Vehicle {
   brakeT = 0;
   honkCd = 0;
   dead = false;
+  /** 警察などが外から運転している（交通の処理では動かさない） */
+  external = false;
   /** 撒菱でパンクした */
   flat = false;
   burnT = -1;
@@ -77,8 +80,10 @@ export class Vehicle {
   collider: RAPIER.Collider;
   private cc: RAPIER.KinematicCharacterController;
   private lean = 0;
-  /** 爆発で壊れた */
+  /** 吹っ飛んでいる／ひっくり返った（運転できない） */
   wrecked = false;
+  /** 爆発で黒こげ */
+  charred = false;
   private wreckV: THREE.Vector3 | null = null;
   private spinX = 0;
   private spinZ = 0;
@@ -106,6 +111,7 @@ export class Vehicle {
         .setCollisionGroups(groups(G.VEHICLE, G.STATIC | G.PLAYER | G.NPC | G.VEHICLE | G.ITEM)),
       this.body,
     );
+    if (kind === 'tank') this.hp = 450;
     this.cc = w.createCharacterController(0.04);
     this.cc.setSlideEnabled(true);
     game.scene.add(this.model.root);
@@ -114,6 +120,12 @@ export class Vehicle {
 
   get forward() {
     return _v.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
+  }
+
+  /** 重さのめやす（ぶつかったときにどちらが飛ぶか） */
+  get mass() {
+    const s = this.spec;
+    return s.halfW * s.halfL * s.height * (this.kind === 'tank' ? 8 : s.bike ? 0.5 : 1);
   }
 
   get kmh() {
@@ -176,6 +188,11 @@ export class Vehicle {
     const grip = s.grip * (hand ? 1.7 : 1) * (this.flat ? 0.6 : 1);
     const maxYaw = grip / Math.max(2.5, Math.abs(this.speed));
     yawRate = clamp(yawRate, -maxYaw, maxYaw);
+    // 戦車はその場で旋回できる（キャタピラ）
+    if (this.kind === 'tank') {
+      yawRate = this.steer * 1.05;
+      this.slip = 0;
+    }
     if (this.flat) yawRate += Math.sin(performance.now() * 0.004) * 0.25 * v01;
     this.yawRate = yawRate;
     this.yaw += yawRate * dt;
@@ -201,10 +218,20 @@ export class Vehicle {
     const dz = (fz * this.speed + rz * this.slip) * dt;
     this.cc.computeColliderMovement(this.collider, { x: dx, y: 0, z: dz }, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, groups(G.VEHICLE, G.STATIC | G.VEHICLE));
     const mv = this.cc.computedMovement();
+    // ぶつかった物を壊す・はね飛ばす（突き抜けたら勢いが少し残る）
+    let keep = -1;
+    if (Math.abs(this.speed) > (this.kind === 'tank' ? 0.5 : 4)) {
+      const n = this.cc.numComputedCollisions();
+      for (let i = 0; i < n; i++) {
+        const c = this.cc.computedCollision(i)?.collider;
+        if (c) keep = Math.max(keep, this.hitThing(c, Math.abs(this.speed)));
+      }
+    }
     // ぶつかった分だけ速度を失う（壁に沿ってすべる成分は残る）
     const along = (mv.x * fx + mv.z * fz) / Math.max(dt, 1e-4);
     const lost = Math.abs(this.speed) - Math.abs(along);
-    if (Math.hypot(dx, dz) > 1e-3 && lost > 0.8) {
+    if (keep >= 0) this.speed *= keep;
+    else if (Math.hypot(dx, dz) > 1e-3 && lost > 0.8) {
       if (lost > 6) this.crash(lost);
       this.speed = Math.sign(this.speed) * Math.max(0, Math.abs(along)) * (lost > 6 ? 0.6 : 1);
       this.slip *= 0.5;
@@ -217,10 +244,63 @@ export class Vehicle {
     this.body.setNextKinematicRotation(quatY(this.yaw));
   }
 
+  /** ぶつかった相手を壊す／はね飛ばす。突き抜けたときは残る速さの割合、止められたら -1 */
+  private hitThing(c: RAPIER.Collider, sp: number): number {
+    const g = this.game;
+    const tank = this.kind === 'tank';
+    const byP = this.driver === 'player' || this.playerT < 10;
+    const o = g.destruction.byCollider(c.handle);
+    if (o) {
+      if (sp < (tank ? 1.5 : BREAK_SPEED[o.kind])) {
+        if (sp > 8) g.destruction.damage(o, sp * 3, this.pos, true, byP);
+        return -1;
+      }
+      g.destruction.destroy(o, this.pos.clone().sub(this.forward.multiplyScalar(4 * Math.sign(this.speed || 1))), true, byP);
+      const big = o.kind === 'house' || o.kind === 'building' || o.kind === 'tower';
+      if (!tank) this.hp -= big ? 28 : 3;
+      if (this.driver === 'player') g.camRig.addShake(big ? 1.1 : 0.25);
+      return tank ? 0.92 : big ? 0.45 : 0.85;
+    }
+    for (const ov of g.traffic.list) {
+      if (ov === this || ov.collider.handle !== c.handle || ov.wrecked) continue;
+      let k = sp * Math.min(2.5, this.mass / ov.mass);
+      if (tank) k = Math.max(k, 11);
+      if (k < 10) return -1;
+      const dir = ov.pos.clone().sub(this.pos).setY(0).normalize().multiplyScalar(0.6).add(this.forward.multiplyScalar(Math.sign(this.speed || 1))).normalize();
+      ov.knock(dir.multiplyScalar(k * 0.9).setY(Math.min(15, 3 + k * 0.45)));
+      if (!tank) this.hp -= k * 0.6;
+      if (this.driver === 'player') g.camRig.addShake(0.6);
+      return tank ? 0.95 : clamp(this.mass / (this.mass + ov.mass), 0.3, 0.85);
+    }
+    return -1;
+  }
+
+  /** 強くぶつけられて吹っ飛ぶ（着地して起きていればまた乗れる） */
+  knock(vel: THREE.Vector3) {
+    const g = this.game;
+    if (this.driver === 'player') {
+      this.speed = -this.speed * 0.3;
+      this.hp -= vel.length() * 1.5;
+      return;
+    }
+    this.hp -= vel.length() * 2;
+    this.ai = null;
+    this.driver = 'none';
+    this.speed = 0;
+    this.slip = 0;
+    this.wreckV = vel.clone();
+    this.spinX = (rand.next() - 0.5) * vel.length() * 0.5;
+    this.spinZ = (rand.next() - 0.5) * vel.length() * 0.5;
+    this.wrecked = true;
+    g.audio.play('crash', this.pos, 1, 0.85);
+    g.audio.play('glass', this.pos, 0.7);
+    g.fx.sparks(this.pos.clone().setY(this.pos.y + 0.6));
+  }
+
   private crash(lost: number) {
     const g = this.game;
     const k = clamp(lost / 18, 0, 1);
-    this.hp -= lost * (this.spec.bike ? 2.2 : 1.6);
+    this.hp -= lost * (this.spec.bike ? 2.2 : this.kind === 'tank' ? 0.15 : 1.6);
     g.audio.play('crash', this.pos, 0.4 + k * 0.6);
     if (this.driver === 'player') g.camRig.addShake(0.3 + k);
     g.fx.sparks(this.pos.clone().add(this.forward.clone().multiplyScalar(this.spec.halfL * Math.sign(this.speed || 1))));
@@ -248,7 +328,8 @@ export class Vehicle {
       if (this.burnT < 0) {
         this.burnT = -1;
         this.hp = 100;
-        g.explode(this.pos.clone().setY(this.pos.y + 0.6), this.playerT < 15);
+        g.explode(this.pos.clone().setY(this.pos.y + 0.6), this.playerT < 15, this.kind === 'tank' ? 1.8 : 1);
+        if (this.kind === 'tank') this.blast(new THREE.Vector3(0, 3, 0));
       }
     }
   }
@@ -290,8 +371,9 @@ export class Vehicle {
     this.wreckV = vel.clone();
     this.spinX = (rand.next() - 0.5) * 6;
     this.spinZ = (rand.next() - 0.5) * 6;
-    if (!this.wrecked) {
-      this.wrecked = true;
+    this.wrecked = true;
+    if (!this.charred) {
+      this.charred = true;
       this.model.root.traverse((o) => {
         const m = o as THREE.Mesh;
         if (m.isMesh && (m.material as THREE.MeshStandardMaterial).color) {
@@ -306,7 +388,8 @@ export class Vehicle {
 
   /** 吹っ飛び中の動き（Traffic から毎フレーム呼ぶ） */
   updateWreck(dt: number) {
-    if (Math.random() < dt * 6) this.game.fx.smoke(this.pos.clone().setY(this.pos.y + 1), true);
+    if (this.charred && Math.random() < dt * 6) this.game.fx.smoke(this.pos.clone().setY(this.pos.y + 1), true);
+    if (!this.charred) this.damageEffects(dt);
     if (!this.wreckV) return;
     const v = this.wreckV;
     v.y -= 22 * dt;
@@ -324,8 +407,15 @@ export class Vehicle {
         g.audio.play('crash', this.pos, 0.7);
       } else {
         this.wreckV = null;
-        this.model.body.rotation.z = Math.round(this.model.body.rotation.z / Math.PI) * Math.PI;
-        this.model.body.rotation.x = Math.round(this.model.body.rotation.x / Math.PI) * Math.PI;
+        const b = this.model.body.rotation;
+        b.z = Math.round(b.z / Math.PI) * Math.PI;
+        b.x = Math.round(b.x / Math.PI) * Math.PI;
+        // ひっくり返らずに着地したら、また運転できる
+        if (!this.charred && Math.cos(b.x) * Math.cos(b.z) > 0) {
+          b.x = 0;
+          b.z = 0;
+          this.wrecked = false;
+        }
       }
     }
     this.place(this.pos.x + v.x * dt, ny, this.pos.z + v.z * dt, this.yaw);

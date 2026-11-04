@@ -3,6 +3,7 @@ import type { Assets } from '../assets/Assets';
 import type { Physics } from '../core/Physics';
 import { Rng } from '../core/Rng';
 import { Batcher } from './Batcher';
+import type { DestKind, Destruction } from './Destruction';
 import { GEO, MAT, makeSign } from './Kit';
 
 const _p = new THREE.Vector3();
@@ -18,6 +19,8 @@ export class WorldBuilder {
   batch = new Batcher();
   /** 個別メッシュ（看板など）の置き場 */
   extras = new THREE.Group();
+  /** 壊せる物の登録先（街を作っている間だけ） */
+  dest: Destruction | null = null;
 
   constructor(public physics: Physics, public rng: Rng, public assets: Assets) {
     const b = this.batch;
@@ -40,6 +43,14 @@ export class WorldBuilder {
     b.define('disc', GEO.disc, MAT.ground, false, true);
     b.define('water', GEO.flat, MAT.water, false, true);
     b.define('waterDisc', GEO.disc, MAT.water, false, true);
+  }
+
+  /** ここから end() までに置いた物を、1つの「壊せる物」として登録する */
+  begin(kind: DestKind, x: number, y: number, z: number, w: number, d: number, h: number, color: THREE.ColorRepresentation) {
+    this.dest?.begin(kind, x, y, z, w, d, h, '#' + new THREE.Color(color).getHexString());
+  }
+  end() {
+    this.dest?.end();
   }
 
   static mat(x: number, y: number, z: number, rotY: number, sx: number, sy: number, sz: number) {
@@ -131,6 +142,12 @@ export class WorldBuilder {
 
   // ---------- 建物 ----------
   building(x: number, z: number, y: number, w: number, d: number, h: number, color: THREE.ColorRepresentation, rotY = 0, style: 'office' | 'house' | 'shop' = 'office') {
+    this.begin(h >= 45 ? 'tower' : style === 'house' && h < 8 ? 'house' : 'building', x, y, z, w, d, h, color);
+    this.buildingInner(x, z, y, w, d, h, color, rotY, style);
+    this.end();
+  }
+
+  private buildingInner(x: number, z: number, y: number, w: number, d: number, h: number, color: THREE.ColorRepresentation, rotY: number, style: 'office' | 'house' | 'shop') {
     this.box(style, x, y, z, w, h, d, color, rotY);
     if (style === 'office' && h > 12) {
       // 屋上の室外機など
@@ -144,6 +161,12 @@ export class WorldBuilder {
 
   /** 一戸建て。正面はローカル +z。Kenney の住宅があればそれを使う */
   house(x: number, z: number, y: number, w: number, d: number, rotY: number, wall: THREE.ColorRepresentation, roof: THREE.ColorRepresentation, stories = 1) {
+    this.begin('house', x, y, z, w, d, stories * 3.2, wall);
+    this.houseInner(x, z, y, w, d, rotY, wall, roof, stories);
+    this.end();
+  }
+
+  private houseInner(x: number, z: number, y: number, w: number, d: number, rotY: number, wall: THREE.ColorRepresentation, roof: THREE.ColorRepresentation, stories: number) {
     const variants = 'abcdefghijklmnopqrstu'.split('').map((c) => `suburban/building-type-${c}`).filter((k) => this.hasModel(k));
     if (variants.length) {
       const key = this.rng.pick(variants);
@@ -162,6 +185,12 @@ export class WorldBuilder {
 
   // ---------- 小物 ----------
   tree(x: number, z: number, y: number, s = 1, kind: 'round' | 'pine' | 'sakura' | 'bush' = 'round') {
+    this.begin(kind === 'bush' ? 'prop' : 'tree', x, y, z, 1.4 * s, 1.4 * s, kind === 'bush' ? 1 : 6 * s, kind === 'sakura' ? '#c98aa0' : '#5a7a3a');
+    this.treeInner(x, z, y, s, kind);
+    this.end();
+  }
+
+  private treeInner(x: number, z: number, y: number, s: number, kind: 'round' | 'pine' | 'sakura' | 'bush') {
     const rng = this.rng;
     if (this.kenneyTree(x, z, y, s, kind)) return;
     if (kind === 'bush') {
@@ -210,6 +239,12 @@ export class WorldBuilder {
 
   /** 街灯。腕はローカル +z 方向（道路側）へ伸びる */
   lamp(x: number, z: number, y: number, rotY: number) {
+    this.begin('lamp', x, y, z, 0.6, 0.6, 5.5, '#55585e');
+    this.lampInner(x, z, y, rotY);
+    this.end();
+  }
+
+  private lampInner(x: number, z: number, y: number, rotY: number) {
     const lk = this.hasModel('roads/light-curved') ? 'roads/light-curved' : this.hasModel('roads/light-square') ? 'roads/light-square' : '';
     if (lk) {
       const sz = this.modelSize(lk)!;
@@ -229,20 +264,25 @@ export class WorldBuilder {
 
   /** 電柱 */
   pole(x: number, z: number, y: number, rotY: number) {
+    this.begin('pole', x, y, z, 0.6, 0.6, 9.5, '#a7a39b');
     this.cyl(x, y, z, 0.15, 9.5, '#a7a39b', false);
     this.physics.staticCylinder(x, y + 1.5, z, 1.5, 0.17);
     this.box('plain', x, y + 8.4, z, 1.8, 0.12, 0.12, '#6e6a62', rotY, false);
     this.box('plain', x, y + 7.6, z, 0.35, 0.5, 0.35, '#7d7a72', rotY, false);
+    this.end();
   }
 
   vending(x: number, z: number, y: number, rotY: number, color: THREE.ColorRepresentation) {
+    this.begin('prop', x, y, z, 1, 0.8, 1.85, color);
     this.box('plain', x, y, z, 1.0, 1.85, 0.75, color, rotY);
     const [fx, fz] = WorldBuilder.local(x, z, rotY, 0, 0.38);
     this.box('lamp', fx, y + 1.0, fz, 0.8, 0.7, 0.02, '#ffffff', rotY, false);
     this.box('plain', fx, y + 0.3, fz, 0.6, 0.18, 0.04, '#222222', rotY, false);
+    this.end();
   }
 
   bench(x: number, z: number, y: number, rotY: number) {
+    this.begin('prop', x, y, z, 1.7, 0.5, 0.9, '#8a5a36');
     this.box('plain', x, y + 0.42, z, 1.7, 0.08, 0.48, '#8a5a36', rotY, false);
     const [bx, bz] = WorldBuilder.local(x, z, rotY, 0, -0.22);
     this.box('plain', bx, y + 0.5, bz, 1.7, 0.45, 0.06, '#8a5a36', rotY, false);
@@ -251,14 +291,18 @@ export class WorldBuilder {
       this.box('plain', lx, y, lz, 0.08, 0.42, 0.45, '#3d3d3d', rotY, false);
     }
     this.physics.staticBox(x, y + 0.25, z, 0.85, 0.25, 0.25, rotY);
+    this.end();
   }
 
   trashcan(x: number, z: number, y: number) {
+    this.begin('prop', x, y, z, 0.6, 0.6, 0.85, '#4d6b55');
     this.cyl(x, y, z, 0.28, 0.85, '#4d6b55');
+    this.end();
   }
 
   /** 駐車中の車（今は飾り。フェーズ3で運転可能に） */
   parkedCar(x: number, z: number, y: number, rotY: number, color: THREE.ColorRepresentation) {
+    this.begin('prop', x, y, z, 1.8, 4.2, 1.5, color);
     this.box('plain', x, y + 0.3, z, 1.75, 0.65, 4.2, color, rotY, false);
     const [cx, cz] = WorldBuilder.local(x, z, rotY, 0, -0.25);
     this.box('glass', cx, y + 0.95, cz, 1.55, 0.55, 2.2, '#9fc6e0', rotY, false);
@@ -268,6 +312,7 @@ export class WorldBuilder {
       this.box('plain', tx, y, tz, 0.25, 0.62, 0.62, '#1b1b1b', rotY, false);
     }
     this.physics.staticBox(x, y + 0.75, z, 0.9, 0.75, 2.1, rotY);
+    this.end();
   }
 
   /** 看板（個別メッシュ）。正面はローカル +z */
@@ -276,6 +321,7 @@ export class WorldBuilder {
     m.position.set(x, y, z);
     m.rotation.y = rotY;
     this.extras.add(m);
+    this.dest?.attach(m, x, z);
     return m;
   }
 

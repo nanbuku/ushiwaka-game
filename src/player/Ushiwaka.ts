@@ -3,7 +3,7 @@ import type { Game } from '../core/Game';
 import { G, groups, RAPIER } from '../core/Physics';
 import { angleDiff, clamp, damp, rand } from '../core/Rng';
 import type { WorldItem } from '../gameplay/Items';
-import { WEAPON_ORDER } from '../gameplay/Weapons';
+import { WEAPON_KEYS, WEAPON_ORDER } from '../gameplay/Weapons';
 import type { Vehicle } from '../vehicles/Vehicle';
 import { DogModel } from './DogModel';
 
@@ -40,6 +40,22 @@ export class Ushiwaka {
   private sinceHurt = 99;
   private stepT = 0;
   private wasSwimming = false;
+  /** 防具（もふもふベスト）。体力より先に減る */
+  armor = 0;
+  maxArmor = 100;
+  private jumps = 0;
+  dashT = 0;
+  private dashCd = 0;
+  private dashDir = new THREE.Vector3();
+  shieldT = 0;
+  shieldCd = 0;
+  spinCd = 0;
+  private spinT = 9;
+  /** 死んだふり（ぬいぐるみのふり）中 */
+  playDead = false;
+  gliding = false;
+  private flipT = 9;
+  private shieldMesh: THREE.Mesh;
 
   constructor(private game: Game) {
     const w = game.physics.world;
@@ -55,6 +71,12 @@ export class Ushiwaka {
     this.cc.setMinSlopeSlideAngle((35 * Math.PI) / 180);
     this.cc.setApplyImpulsesToDynamicBodies(true);
     game.scene.add(this.model.root);
+    this.shieldMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.65, 24, 16),
+      new THREE.MeshBasicMaterial({ color: '#9fd8ff', transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    this.shieldMesh.visible = false;
+    game.scene.add(this.shieldMesh);
   }
 
   get forward() {
@@ -89,7 +111,19 @@ export class Ushiwaka {
     this.barkT += dt;
     this.hurtCd -= dt;
     this.sinceHurt += dt;
-    if (this.sinceHurt > 5 && !this.dead) this.hp = Math.min(this.maxHp, this.hp + dt * 5);
+    this.dashT -= dt;
+    this.dashCd -= dt;
+    this.shieldT -= dt;
+    this.shieldCd -= dt;
+    this.spinCd -= dt;
+    this.spinT += dt;
+    this.flipT += dt;
+    if (this.sinceHurt > 4 && !this.dead) this.hp = Math.min(this.maxHp, this.hp + dt * 8);
+    this.shieldMesh.visible = this.shieldT > 0 && !this.driving;
+    if (this.shieldMesh.visible) {
+      this.shieldMesh.position.set(this.pos.x, this.pos.y + 0.35, this.pos.z);
+      this.shieldMesh.scale.setScalar(1 + Math.sin(this.spinT * 10) * 0.03);
+    }
 
     // ---------- 運転中 ----------
     if (this.driving) {
@@ -130,6 +164,13 @@ export class Ushiwaka {
       if (inp.down('KeyS') || inp.down('ArrowDown')) iz -= 1;
       if (inp.down('KeyA')) ix -= 1;
       if (inp.down('KeyD')) ix += 1;
+      // 死んだふり（動くか Z でやめる）
+      if (inp.pressed('KeyZ')) this.setPlayDead(!this.playDead);
+      if (this.playDead && (ix || iz || inp.pressed('Space'))) this.setPlayDead(false);
+      if (this.playDead) {
+        ix = 0;
+        iz = 0;
+      }
     }
     const cy = g.camRig.yaw;
     const fx = -Math.sin(cy);
@@ -146,21 +187,55 @@ export class Ushiwaka {
     const water = g.world.waterAt(this.pos.x, this.pos.z);
     this.swimming = !!water && this.pos.y < water.y + 0.25;
     const running = canAct && (inp.down('ShiftLeft') || inp.down('ShiftRight'));
-    const maxSpeed = this.swimming ? 2.4 : running ? 8.6 : 3.8;
-    const k = damp(this.grounded || this.swimming ? 14 : 3.5, dt);
+    const maxSpeed = this.swimming ? 2.8 : running ? 11.5 : 4.6;
+    const k = damp(this.grounded || this.swimming ? 14 : 5, dt);
     this.vel.x += (dx * maxSpeed - this.vel.x) * k;
     this.vel.z += (dz * maxSpeed - this.vel.z) * k;
 
-    // ---------- ジャンプと重力 ----------
+    // ---------- ダッシュ（C / Ctrl） ----------
+    if (canAct && (inp.pressed('KeyC') || inp.pressed('ControlLeft')) && this.dashCd <= 0 && !this.playDead) {
+      this.dashT = 0.22;
+      this.dashCd = 0.65;
+      if (dl > 0.1) this.dashDir.set(dx, 0, dz).normalize();
+      else this.dashDir.copy(this.forward);
+      this.yaw = Math.atan2(this.dashDir.x, this.dashDir.z);
+      g.audio.play('whoosh', this.pos, 0.8, 1.3);
+      for (let i = 0; i < 4; i++) g.fx.smoke(this.pos.clone().setY(this.pos.y + 0.2), false);
+    }
+    if (this.dashT > 0) {
+      this.vel.x = this.dashDir.x * 23;
+      this.vel.z = this.dashDir.z * 23;
+      this.vel.y = Math.max(this.vel.y, 0);
+    }
+
+    // ---------- ジャンプ（二段・壁ジャンプ・滑空）と重力 ----------
+    if (this.grounded) this.jumps = 0;
     this.coyote = this.grounded ? 0.12 : this.coyote - dt;
-    if (canAct && inp.pressed('Space') && this.coyote > 0) {
-      this.vel.y = 7.1;
+    if (canAct && inp.pressed('Space') && !this.playDead) {
+      const wall = this.coyote > 0 ? null : this.wallNormal();
+      if (this.coyote > 0) {
+        this.vel.y = 7.8;
+        this.jumps = 1;
+        g.audio.play(this.swimming ? 'splash' : 'jump', this.pos, 0.6);
+        if (this.swimming) g.fx.splash(this.pos);
+      } else if (wall) {
+        this.vel.set(wall.x * 8, 8.6, wall.z * 8);
+        this.jumps = 1;
+        this.yaw = Math.atan2(wall.x, wall.z);
+        g.audio.play('jump', this.pos, 0.7, 1.3);
+        g.fx.smoke(this.pos.clone().sub(wall.clone().multiplyScalar(0.25)).setY(this.pos.y + 0.3), false);
+      } else if (this.jumps < 2) {
+        this.vel.y = 7.6;
+        this.jumps = 2;
+        this.flipT = 0;
+        g.audio.play('jump', this.pos, 0.6, 1.5);
+        g.fx.smoke(this.pos.clone().setY(this.pos.y + 0.1), false);
+      }
       this.coyote = 0;
       this.grounded = false;
-      g.audio.play(this.swimming ? 'splash' : 'jump', this.pos, 0.6);
-      if (this.swimming) g.fx.splash(this.pos);
     }
-    this.vel.y = Math.max(this.vel.y - 26 * dt, -30);
+    this.gliding = canAct && !this.grounded && this.vel.y < 0 && this.jumps >= 1 && inp.down('Space') && !this.swimming;
+    this.vel.y = Math.max(this.vel.y - 26 * dt, this.gliding ? -2.2 : -30);
 
     // ---------- 衝突つき移動 ----------
     const desired = { x: this.vel.x * dt, y: this.vel.y * dt, z: this.vel.z * dt };
@@ -205,10 +280,17 @@ export class Ushiwaka {
         if (w.current === 'bite' || this.carrying) this.bite();
         else w.attackPressed();
       }
-      if (inp.mouseDown(0) && w.current === 'chainsaw' && !this.carrying) w.attackHeld(dt);
-      for (let i = 1; i <= WEAPON_ORDER.length; i++) if (inp.pressed(`Digit${i}`)) w.select(WEAPON_ORDER[i - 1]);
+      if (inp.mouseDown(0) && (w.current === 'chainsaw' || w.current === 'smg') && !this.carrying) w.attackHeld(dt);
+      for (let i = 0; i < WEAPON_ORDER.length; i++) if (inp.pressed(WEAPON_KEYS[i])) w.select(WEAPON_ORDER[i]);
       if (inp.pressed('KeyR')) w.cycle();
       if (inp.pressed('KeyG')) w.detonate();
+      if (inp.pressed('KeyV')) this.spinAttack();
+      if (inp.pressed('KeyX') && this.shieldCd <= 0) {
+        this.shieldT = 4;
+        this.shieldCd = 10;
+        g.audio.play('mega', this.pos, 0.6, 0.6);
+        g.hud.popText(this.headWorld(), 'もふもふシールド!', '#9fd8ff', 22);
+      }
       if (inp.mouseDown(2)) this.charge = Math.min(1.2, this.charge + dt);
       if (inp.mouseReleased(2)) {
         this.bark(this.charge > 0.75);
@@ -279,9 +361,14 @@ export class Ushiwaka {
       swim: this.swimming,
       happy: this.game.karma.mode === 'devil' ? 1 : this.game.karma.happiness / 100,
       carrying: !!this.carrying,
-      down: this.dead,
+      down: this.dead || this.playDead,
       sit: !!this.driving,
+      glide: this.gliding,
     });
+    // 二段ジャンプの宙返り・回転アタック
+    if (this.flipT < 0.45) r.rotation.x = -(this.flipT / 0.45) * Math.PI * 2;
+    else if (!this.dead && !this.playDead) r.rotation.x = 0;
+    if (this.spinT < 0.4) r.rotation.y = this.yaw + (this.spinT / 0.4) * Math.PI * 4;
   }
 
   // ---------- 噛みつき ----------
@@ -304,6 +391,56 @@ export class Ushiwaka {
       }
     }
     g.audio.play('chomp', this.pos, 0.5);
+  }
+
+  /** 空中で、すぐそばにある壁の向き（壁ジャンプ用） */
+  private wallNormal(): THREE.Vector3 | null {
+    const g = this.game;
+    const o = new THREE.Vector3(this.pos.x, this.pos.y + 0.3, this.pos.z);
+    let best: THREE.Vector3 | null = null;
+    let bd = 0.62;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const hit = g.physics.raycast(o, new THREE.Vector3(Math.sin(a), 0, Math.cos(a)), 0.62, G.STATIC | G.VEHICLE);
+      if (hit && hit.dist < bd && Math.abs(hit.normal.y) < 0.4) {
+        bd = hit.dist;
+        best = hit.normal.clone().setY(0).normalize();
+      }
+    }
+    return best;
+  }
+
+  /** 回転アタック（まわりの人をはじき飛ばす） */
+  spinAttack() {
+    const g = this.game;
+    if (this.spinCd > 0 || this.playDead) return;
+    this.spinCd = 1.1;
+    this.spinT = 0;
+    g.audio.play('whoosh', this.pos, 1, 0.8);
+    g.fx.shockwave(this.pos.clone().setY(this.pos.y + 0.3), 3, false);
+    for (const n of g.npcs.list) {
+      if (!n.alive) continue;
+      const d = Math.hypot(n.pos.x - this.pos.x, n.pos.z - this.pos.z);
+      if (d > 2.6) continue;
+      const dir = n.pos.clone().sub(this.pos).setY(0).normalize();
+      if (n.hp <= 45) {
+        n.fling(dir.multiplyScalar(11).add(new THREE.Vector3(0, 6, 0)));
+        g.karma.crime('kill', n.pos, n.kind, 1, 'bite');
+      } else {
+        n.bitten(45, this.pos);
+        g.karma.crime('bite', n.pos, n.kind);
+      }
+    }
+    for (const v of g.traffic.list) if (!v.wrecked && v !== this.driving && v.contains(this.pos, 1.2)) v.hp -= 25;
+  }
+
+  setPlayDead(on: boolean) {
+    if (this.playDead === on || this.driving) return;
+    this.playDead = on;
+    if (on) {
+      if (this.carrying) this.drop(false);
+      this.game.hud.popText(this.headWorld(), '（ただのぬいぐるみです）', '#ffffff', 18);
+    }
   }
 
   /** 武器を振る動き（噛みつきと同じ頭の動き） */
@@ -388,6 +525,12 @@ export class Ushiwaka {
     const g = this.game;
     this.hurtCd = 0.35;
     this.sinceHurt = 0;
+    if (this.shieldT > 0) dmg *= 0.15;
+    if (this.armor > 0) {
+      const a = Math.min(this.armor, dmg * 0.75);
+      this.armor -= a;
+      dmg -= a;
+    }
     this.hp -= dmg;
     const dir = this.pos.clone().sub(from).setY(0).normalize();
     this.vel.addScaledVector(dir, 6);
@@ -412,6 +555,7 @@ export class Ushiwaka {
   get hint(): string {
     const g = this.game;
     if (this.dead) return '';
+    if (this.driving?.kind === 'tank') return `F: 降りる　W/S: 前進・後退　A/D: その場で旋回　マウス: 砲塔を向ける　左クリック: 主砲`;
     if (this.driving) return `F: 降りる（走行中は飛び降り）　W/S: アクセル・ブレーキ　A/D: ハンドル　Space: サイドブレーキ（ドリフト）　右クリック: クラクション`;
     const veh = g.traffic.nearest(this.pos, 1.6);
     if (veh) return `F: ${veh.spec.name}に乗る${veh.driver === 'npc' ? '（運転手を追い出す）' : ''}`;

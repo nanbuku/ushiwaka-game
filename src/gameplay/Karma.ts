@@ -2,8 +2,8 @@ import type * as THREE from 'three';
 import type { Game } from '../core/Game';
 import type { ItemDef } from './Items';
 
-export type CrimeKind = 'bite' | 'kill' | 'steal' | 'shrine' | 'faint' | 'bomb';
-export type KillCause = 'bite' | 'car' | 'bomb' | 'fire' | 'bat' | 'saw' | 'spikes' | 'shock';
+export type CrimeKind = 'bite' | 'kill' | 'steal' | 'shrine' | 'faint' | 'bomb' | 'wreck' | 'shoot';
+export type KillCause = 'bite' | 'car' | 'bomb' | 'fire' | 'bat' | 'saw' | 'spikes' | 'shock' | 'gun' | 'missile' | 'nuke' | 'tank' | 'crush';
 const HOW: Record<KillCause, string> = {
   bite: 'を噛み殺した…',
   car: 'をはねた…',
@@ -13,6 +13,11 @@ const HOW: Record<KillCause, string> = {
   saw: 'をチェーンソーで切り刻んだ…',
   spikes: 'が撒菱の傷で力尽きた…',
   shock: 'がショック死した…',
+  gun: 'を撃ち殺した…',
+  missile: 'をミサイルで吹き飛ばした…',
+  nuke: 'を核の炎で消し去った…',
+  tank: 'を戦車で吹き飛ばした…',
+  crush: 'を建物の下敷きにした…',
 };
 
 const VICTIM: Record<string, string> = {
@@ -23,6 +28,9 @@ const VICTIM: Record<string, string> = {
   office: '会社員',
   clerk: '店員さん',
   catcher: '保健所の職員',
+  police: '警察官',
+  swat: 'SWAT隊員',
+  soldier: '防衛隊員',
 };
 
 const SAVE_KEY = 'ushiwaka-save-v1';
@@ -54,9 +62,9 @@ export class Karma {
 
   crime(kind: CrimeKind, pos: THREE.Vector3, detail = '', count = 1, cause: KillCause = 'bite') {
     const g = this.game;
-    g.heat.report(kind, pos, detail === 'catcher');
+    g.heat.report(kind, pos, ['catcher', 'police', 'swat', 'soldier'].includes(detail));
     g.requests.onCrime(kind, detail, pos, count);
-    let pts = { bite: 3, kill: 12, steal: 2, shrine: 4, faint: 1, bomb: 5 }[kind] * count;
+    let pts = { bite: 3, kill: 12, steal: 2, shrine: 4, faint: 1, bomb: 5, wreck: 3, shoot: 3 }[kind] * count;
     if (kind === 'kill' && (detail === 'child' || detail === 'elderly')) pts += 4;
     this.evil += pts;
     if (this.mode === 'devil') this.devil = Math.min(100, this.devil + pts * 0.5);
@@ -84,6 +92,12 @@ export class Karma {
         break;
       case 'bomb':
         g.hud.toast(`爆弾を爆発させた！　悪行 +${pts}`, 'bad');
+        break;
+      case 'shoot':
+        g.hud.toast(`${VICTIM[detail] ?? '人'}を撃った　悪行 +${pts}`, 'bad');
+        break;
+      case 'wreck':
+        g.hud.toast(`建物を${count}棟こわした　悪行 +${pts}`, 'bad');
         break;
       case 'faint':
         this.stats.faints += count;

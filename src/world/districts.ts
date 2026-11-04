@@ -10,7 +10,7 @@ function vehicle(w: World, x: number, y: number, z: number, yaw: number, kind: V
   w.vehicleSpots.push({ x, y, z, yaw, kind });
 }
 
-function weapon(w: World, id: WeaponId, x: number, y: number, z: number) {
+function weapon(w: World, id: WeaponId | 'vest', x: number, y: number, z: number) {
   w.weaponSpots.push({ id, x, y, z });
 }
 
@@ -64,7 +64,11 @@ function kenneyBuilding(w: World, x: number, z: number, y: number, bw: number, b
   const size = b.modelSize(key)!;
   const s = Math.min(bw / size.x, bd / size.z);
   const ky = Math.max(tall ? 0.75 : 0.85, Math.min(tall ? 2.2 : 1.35, h / (size.y * s)));
-  return b.model(key, x, y, z, rot, [s, s * ky, s]);
+  const realH = size.y * s * ky;
+  b.begin(realH >= 45 ? 'tower' : 'building', x, y, z, size.x * s, size.z * s, realH, '#a9a39a');
+  const r = b.model(key, x, y, z, rot, [s, s * ky, s]);
+  b.end();
+  return r;
 }
 
 // =====================================================================
@@ -702,6 +706,7 @@ function buildCivic(w: World, lot: Lot) {
     for (let i = 0; i < 8; i++) b.tree(a.x0 + 4 + i * 10, a.z1 - 4, y, 1.0, 'sakura');
     for (let i = 0; i < 6; i++) vehicle(w, a.x1 - 6 - i * 1.0, y, a.z0 + 24, Math.PI / 2, 'bicycle');
     weapon(w, 'bat', cx - 12, y, cz + 26);
+    weapon(w, 'vest', cx - 8, y, cz + 26);
     weapon(w, 'megaphone', cx + 18, y, a.z0 + 21);
   } else if (lot.cx0 === 0 && lot.cz0 === 100) {
     // ひだまり総合病院
@@ -744,6 +749,8 @@ function buildCivic(w: World, lot: Lot) {
     b.box('lamp', a.x0 + 8, y + 5.4, a.z0 + 2.9, 0.4, 0.4, 0.2, '#ff3b3b', Math.PI, false);
     vehicle(w, a.x0 + 16, y, a.z0 + 6, 0, 'police');
     weapon(w, 'megaphone', a.x0 + 12, y, a.z0 + 2);
+    weapon(w, 'pistol', a.x0 + 5.5, y, a.z0 + 1.5);
+    weapon(w, 'vest', a.x0 + 8.8, y, a.z0 + 1.2);
     vehicle(w, a.x0 + 3, y, a.z0 + 14, Math.PI / 2, 'bicycle');
     b.building(cx + 8, cz, y, 28, 20, 10, '#d8cbb5', 0, 'office');
     b.sign('ひだまり図書館', cx + 8, y + 7.5, cz + 10.05, 0, 8, 1.1, '#ffffff', '#5a4632');
@@ -789,6 +796,12 @@ function buildRiverside(w: World, lot: Lot) {
       weapon(w, 'c4', a.x0 + 16, y, cz + 18);
       weapon(w, 'chainsaw', a.x0 + 22, y, cz + 18);
       weapon(w, 'molotov', a.x0 + 28, y, cz + 18);
+      // 工場の奥は秘密の兵器庫
+      weapon(w, 'smg', a.x0 + 34, y, cz + 18);
+      weapon(w, 'missile', a.x0 + 40, y, cz + 18);
+      weapon(w, 'nuke', a.x0 + 46, y, cz + 18);
+      weapon(w, 'vest', a.x0 + 52, y, cz + 18);
+      vehicle(w, a.x0 + 60, y, cz + 11, Math.PI / 2, 'tank');
     }
   }
 }

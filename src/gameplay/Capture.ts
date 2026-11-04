@@ -39,6 +39,7 @@ export class Capture {
       }
       g.heat.reset();
       g.npcs.dismissCatchers();
+      g.police.reset();
       g.hud.fade(false);
       g.dialogue.show(
         '保健所の職員',

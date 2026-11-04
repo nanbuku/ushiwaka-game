@@ -18,7 +18,8 @@ export type VehicleKind =
   | 'kart'
   | 'scooter'
   | 'motorbike'
-  | 'bicycle';
+  | 'bicycle'
+  | 'tank';
 
 export interface VehicleSpec {
   halfW: number;
@@ -74,6 +75,7 @@ export const SPECS: Record<VehicleKind, VehicleSpec> = {
   kart: base({ name: 'ゴーカート', maxSpeed: 27, accel: 16, brake: 20, grip: 18, steerMax: 0.7, reverseMax: 5 }),
   scooter: base({ name: 'スクーター', halfW: 0.32, halfL: 0.9, height: 1.15, maxSpeed: 22, accel: 11, brake: 15, grip: 13, steerMax: 0.65, reverseMax: 3, wheelR: 0.24, seat: [0, 0.62, -0.15], bike: true }),
   motorbike: base({ name: 'バイク', halfW: 0.36, halfL: 1.05, height: 1.2, maxSpeed: 41, accel: 17, brake: 18, grip: 16, steerMax: 0.6, reverseMax: 3, wheelR: 0.32, seat: [0, 0.78, -0.2], bike: true }),
+  tank: base({ name: '戦車', halfW: 1.7, halfL: 3.3, height: 2.3, maxSpeed: 17, accel: 5.5, brake: 12, grip: 30, steerMax: 0.9, reverseMax: 7, wheelR: 0.42, seat: [0, 2.05, -0.55] }),
   bicycle: base({ name: '自転車', halfW: 0.28, halfL: 0.85, height: 1.1, maxSpeed: 11, accel: 4.5, brake: 10, grip: 11, steerMax: 0.7, reverseMax: 2, wheelR: 0.33, seat: [0, 0.72, -0.2], bike: true }),
 };
 
@@ -117,6 +119,10 @@ export class VehicleModel {
   wheels: THREE.Group[] = [];
   frontWheels: THREE.Group[] = [];
   seat = new THREE.Object3D();
+  /** 戦車の砲塔と砲身（左右・上下に動く）、砲口 */
+  turret: THREE.Group | null = null;
+  barrel: THREE.Group | null = null;
+  muzzle: THREE.Object3D | null = null;
   color: string;
   spec: VehicleSpec;
 
@@ -130,6 +136,11 @@ export class VehicleModel {
     }
     const s = SPECS[kind];
     this.root.add(this.body);
+    if (kind === 'tank') {
+      this.color = '#5b6b3a';
+      this.buildTank();
+      return;
+    }
     this.color = kind === 'taxi' ? '#f2b705' : kind === 'catcherVan' ? '#f4f4f0' : CAR_COLORS[Math.floor(colorSeed * CAR_COLORS.length)];
     const c = this.color;
     const W = s.halfW * 2;
@@ -240,6 +251,58 @@ export class VehicleModel {
       if (z > 0) this.frontWheels.push(g);
       void i;
     });
+    this.seat.position.set(...s.seat);
+    this.body.add(this.seat);
+  }
+
+  /** 防衛隊の戦車（コードで組み立てる） */
+  private buildTank() {
+    const s = this.spec;
+    const olive = colorMat('#5b6b3a', 0.7);
+    const dark = colorMat('#3f4a2a', 0.75);
+    const L = s.halfL * 2;
+    const hull = box(s.halfW * 1.7, 0.75, L * 0.92, '', 0, 1.05, 0, olive);
+    const glacis = box(s.halfW * 1.7, 0.5, 1.1, '', 0, 0.95, L * 0.46, olive);
+    glacis.rotation.x = -0.7;
+    this.body.add(hull, glacis);
+    for (const sx of [-1, 1]) {
+      this.body.add(box(0.62, 0.85, L, '#232323', sx * (s.halfW - 0.31), 0.5, 0, tireMat));
+      this.body.add(box(0.66, 0.08, L * 0.96, '', sx * (s.halfW - 0.31), 0.97, 0, dark));
+      for (let i = 0; i < 6; i++) {
+        const g = new THREE.Group();
+        g.position.set(sx * (s.halfW - 0.31), 0.42, -L / 2 + 0.6 + i * ((L - 1.2) / 5));
+        const spin = new THREE.Group();
+        const w = new THREE.Mesh(wheelGeo, rimMat);
+        w.scale.set(0.66, 0.36, 0.36);
+        spin.add(w);
+        g.add(spin);
+        this.root.add(g);
+        this.wheels.push(g);
+      }
+    }
+    const turret = new THREE.Group();
+    turret.position.set(0, 1.42, -0.25);
+    this.body.add(turret);
+    const tb = box(2.1, 0.7, 2.7, '', 0, 0.35, 0, olive);
+    const tf = box(1.7, 0.55, 0.8, '', 0, 0.32, 1.55, olive);
+    const hatch = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.12, 14), dark);
+    hatch.position.set(0, 0.76, -0.3);
+    turret.add(tb, tf, hatch);
+    const barrel = new THREE.Group();
+    barrel.position.set(0, 0.42, 1.8);
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 4.2, 12).rotateX(Math.PI / 2), dark);
+    tube.position.z = 2.1;
+    tube.castShadow = true;
+    const brake = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.45, 12).rotateX(Math.PI / 2), dark);
+    brake.position.z = 4.1;
+    barrel.add(tube, brake);
+    const muzzle = new THREE.Object3D();
+    muzzle.position.z = 4.4;
+    barrel.add(muzzle);
+    turret.add(barrel);
+    this.turret = turret;
+    this.barrel = barrel;
+    this.muzzle = muzzle;
     this.seat.position.set(...s.seat);
     this.body.add(this.seat);
   }

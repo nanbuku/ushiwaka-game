@@ -5,13 +5,13 @@ import { angleDiff, damp, rand } from '../core/Rng';
 import type { StarsHandle } from '../fx/Effects';
 import type { ItemId } from '../gameplay/Items';
 import type { NavNode } from '../world/Navigation';
-import type { HumanKind, HumanMode } from './Human';
+import { ARMED, type HumanKind, type HumanMode } from './Human';
 import type { HumanLike } from './KenneyHuman';
 
-export type NPCState = 'walk' | 'idle' | 'startle' | 'flee' | 'attack' | 'faint' | 'getup' | 'dead' | 'return' | 'chase';
+export type NPCState = 'walk' | 'idle' | 'startle' | 'flee' | 'attack' | 'faint' | 'getup' | 'dead' | 'return' | 'chase' | 'armed';
 
-const FAINT_BASE: Record<HumanKind, number> = { man: 0.3, woman: 0.38, child: 0.5, elderly: 0.72, office: 0.32, clerk: 0.32, catcher: 0.18 };
-const HP: Record<HumanKind, number> = { man: 100, woman: 85, child: 55, elderly: 65, office: 95, clerk: 90, catcher: 120 };
+const FAINT_BASE: Record<HumanKind, number> = { man: 0.3, woman: 0.38, child: 0.5, elderly: 0.72, office: 0.32, clerk: 0.32, catcher: 0.18, police: 0.12, swat: 0.05, soldier: 0.04 };
+const HP: Record<HumanKind, number> = { man: 100, woman: 85, child: 55, elderly: 65, office: 95, clerk: 90, catcher: 120, police: 130, swat: 210, soldier: 190 };
 const SCREAM: Record<HumanKind, 'scream_m' | 'scream_f' | 'scream_child' | 'scream_old'> = {
   man: 'scream_m',
   woman: 'scream_f',
@@ -20,6 +20,9 @@ const SCREAM: Record<HumanKind, 'scream_m' | 'scream_f' | 'scream_child' | 'scre
   office: 'scream_m',
   clerk: 'scream_f',
   catcher: 'scream_m',
+  police: 'scream_m',
+  swat: 'scream_m',
+  soldier: 'scream_m',
 };
 const OUCH: Record<HumanKind, string[]> = {
   man: ['いってぇ!', 'うわっ!', 'なんだこの犬!'],
@@ -29,6 +32,9 @@ const OUCH: Record<HumanKind, string[]> = {
   office: ['痛っ!?', 'スーツが!', 'ちょっと!'],
   clerk: ['きゃっ!', 'お客様!?', 'いたっ!'],
   catcher: ['いてっ!', 'こいつ!', 'おとなしくしろ!', '暴れるな!'],
+  police: ['ぐっ!', '応援を頼む!', 'この犬…!'],
+  swat: ['被弾した!', 'まだやれる!', '援護しろ!'],
+  soldier: ['くっ!', '衛生兵!', '撃て、撃て!'],
 };
 const DROPS: ItemId[] = ['wallet', 'phone', 'burger', 'onigiri', 'wallet'];
 
@@ -88,7 +94,7 @@ export class NPC {
     this.height = model.look.height;
     this.radius = model.look.child ? 0.17 : 0.23;
     this.walkSpeed = kind === 'elderly' ? rand.range(0.7, 1.0) : kind === 'child' ? rand.range(1.2, 1.7) : rand.range(1.15, 1.5);
-    this.runSpeed = kind === 'elderly' ? 2.6 : kind === 'child' ? 4.2 : kind === 'catcher' ? 5.8 : 5.2;
+    this.runSpeed = kind === 'elderly' ? 2.6 : kind === 'child' ? 4.2 : kind === 'catcher' ? 5.8 : ARMED.includes(kind) ? 5.6 : 5.2;
     this.brave = (kind === 'man' || kind === 'office') && rand.chance(0.32);
     this.pos.set(x, y, z);
     const w = game.physics.world;
@@ -127,6 +133,39 @@ export class NPC {
 
     if (this.kind === 'catcher' && (this.state === 'walk' || this.state === 'idle') && g.heat.level >= 1) this.state = 'chase';
     switch (this.state) {
+      case 'armed': {
+        const r = g.police.minLevel(this.kind);
+        if (g.heat.level < r) {
+          this.state = 'walk';
+          break;
+        }
+        const pl = g.player;
+        const tgt = pl.driving ? pl.driving.pos : dog;
+        const dT = Math.hypot(tgt.x - this.pos.x, tgt.z - this.pos.z);
+        const want = this.kind === 'soldier' ? 24 : this.kind === 'swat' ? 15 : 11;
+        const sees = g.police.canSee(this, tgt, dT);
+        this.mode = 'run';
+        if (!sees || dT > want + 5) {
+          speed = this.runSpeed;
+          if (dT < 35 || !this.to) {
+            this.moveDir((tgt.x - this.pos.x) / dT, (tgt.z - this.pos.z) / dT, speed * dt, dt);
+            this.from = null;
+            this.to = null;
+          } else {
+            this.fleeFrom.copy(tgt);
+            this.walkGraph(dt, speed, false, true);
+          }
+        } else if (dT < want * 0.45) {
+          speed = this.walkSpeed * 1.4;
+          this.moveDir(-(tgt.x - this.pos.x) / dT, -(tgt.z - this.pos.z) / dT, speed * dt, dt);
+          this.faceTo(tgt, dt);
+        } else {
+          this.mode = 'idle';
+          this.faceTo(tgt, dt);
+        }
+        g.police.combatStep(this, sees, dT, dt);
+        break;
+      }
       case 'chase': {
         if (g.heat.level < 1) {
           this.state = 'walk';
@@ -378,6 +417,10 @@ export class NPC {
     g.hud.popText(this.headPos(), rand.pick(OUCH[this.kind]), '#ffffff', 22);
     this.model.hop = 0.12;
     if (this.state === 'faint') return 'bite';
+    if (ARMED.includes(this.kind)) {
+      this.state = 'armed';
+      return 'bite';
+    }
     if (this.kind === 'catcher' && this.hp > this.maxHp * 0.3) {
       this.state = 'chase';
       return 'bite';
@@ -393,7 +436,7 @@ export class NPC {
 
   /** 驚いて逃げる */
   scare(from: THREE.Vector3, delay = 0.5) {
-    if (!this.conscious || this.state === 'attack' || this.state === 'chase') return;
+    if (!this.conscious || this.state === 'attack' || this.state === 'chase' || this.state === 'armed') return;
     this.fleeFrom.copy(from);
     if (this.state !== 'flee') {
       this.state = 'startle';

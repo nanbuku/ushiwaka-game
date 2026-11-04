@@ -21,6 +21,8 @@ export interface HumanLook {
   hat?: string;
   /** 保健所職員の捕獲網 */
   net?: boolean;
+  /** 手に持つ銃 */
+  gun?: 'pistol' | 'rifle';
 }
 
 export type HumanMode = 'idle' | 'walk' | 'run' | 'panic' | 'lie' | 'cower' | 'wave';
@@ -243,7 +245,10 @@ const PASTEL = ['#f7c5cc', '#c9e4de', '#faedcb', '#c6def1', '#dbcdf0', '#f2c6de'
 const BOTTOMS = ['#2f3b52', '#3a3a3a', '#6b5b45', '#4a5a6a', '#c2b59b', '#1f2a44'];
 const SHOES = ['#2a2a2a', '#f2f2f2', '#6b4a32', '#3b5ba5', '#a33'];
 
-export type HumanKind = 'man' | 'woman' | 'child' | 'elderly' | 'office' | 'clerk' | 'catcher';
+export type HumanKind = 'man' | 'woman' | 'child' | 'elderly' | 'office' | 'clerk' | 'catcher' | 'police' | 'swat' | 'soldier';
+
+/** 銃を持って対応する人（警察・SWAT・防衛隊） */
+export const ARMED: HumanKind[] = ['police', 'swat', 'soldier'];
 
 export function makeLook(kind: HumanKind, rng: Rng): HumanLook {
   const base: HumanLook = {
@@ -305,6 +310,35 @@ export function makeLook(kind: HumanKind, rng: Rng): HumanLook {
       base.hairStyle = 'cap';
       base.hat = '#2e7d32';
       base.net = true;
+      break;
+    case 'police':
+      base.height = rng.range(1.7, 1.84);
+      base.top = '#3b5ba5';
+      base.bottom = '#1f2a44';
+      base.shoes = '#151515';
+      base.hairStyle = 'cap';
+      base.hat = '#1d2c5a';
+      base.gun = 'pistol';
+      break;
+    case 'swat':
+      base.height = rng.range(1.74, 1.88);
+      base.top = '#22252b';
+      base.bottom = '#1b1d22';
+      base.shoes = '#111111';
+      base.hairStyle = 'cap';
+      base.hat = '#15171b';
+      base.gun = 'rifle';
+      base.backpack = '#2b2e35';
+      break;
+    case 'soldier':
+      base.height = rng.range(1.7, 1.86);
+      base.top = '#56603f';
+      base.bottom = '#4a5236';
+      base.shoes = '#2a2418';
+      base.hairStyle = 'cap';
+      base.hat = '#4f5a38';
+      base.gun = 'rifle';
+      base.backpack = '#5a5a3c';
       break;
     case 'clerk':
       base.height = rng.range(1.58, 1.78);

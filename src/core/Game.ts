@@ -18,6 +18,8 @@ import { Dialogue } from '../ui/Dialogue';
 import { HUD } from '../ui/HUD';
 import { SkySystem } from '../world/Sky';
 import { World } from '../world/World';
+import { Destruction } from '../world/Destruction';
+import { Responders } from '../gameplay/Responders';
 import { AudioSys } from './Audio';
 import { EventBus } from './Events';
 import { Input } from './Input';
@@ -54,6 +56,8 @@ export class Game {
   news = new NewsTV(this);
   weapons = new Arsenal(this);
   guide = new Guide(this);
+  destruction!: Destruction;
+  police = new Responders(this);
   sky!: SkySystem;
   world!: World;
   fx!: Effects;
@@ -103,6 +107,7 @@ export class Game {
     this.fx = new Effects(this);
     this.items = new ItemSystem(this);
     this.world = new World(this);
+    this.destruction = new Destruction(this);
     this.items.recording = true;
     this.world.build();
     this.items.recording = false;
@@ -184,6 +189,7 @@ export class Game {
     this.player.revive();
     this.heat.reset();
     this.npcs.dismissCatchers();
+    this.police.reset();
     const w = this.world;
     this.player.teleport(w.spawn, w.spawnYaw);
     this.camRig.snapBehind(w.spawnYaw);
@@ -221,6 +227,11 @@ export class Game {
     for (const v of this.traffic.list) {
       const d = Math.hypot(v.pos.x - pos.x, v.pos.z - pos.z);
       if (d > R * 1.5) continue;
+      // 戦車は爆風では飛ばない（装甲が削れるだけ）
+      if (v.kind === 'tank' && !v.charred) {
+        v.hp -= 60 * scale * (1 - d / (R * 1.5));
+        continue;
+      }
       if (v === this.player.driving) this.player.exitVehicle();
       const dir = v.pos.clone().sub(pos).setY(0).normalize();
       v.blast(dir.multiplyScalar((10 - (d / R) * 5) * scale).add(new THREE.Vector3(0, (12 - (d / R) * 6) * scale, 0)));
@@ -239,6 +250,7 @@ export class Game {
       }
     }
     this.weapons.onExplosion(pos, R);
+    this.destruction.damageArea(pos, R * 1.4, 380 * scale, true, byPlayer);
     if (this.nanku.pos.distanceTo(pos) < 10) this.hud.popText(this.nanku.headPos(), this.karma.mode === 'devil' ? 'たーまやー！' : 'きゃあっ！', '#ff4d6d', 26);
     if (byPlayer) {
       this.karma.crime('bomb', pos);
@@ -286,6 +298,7 @@ export class Game {
       this.player.update(dt);
       this.weapons.update(dt);
       this.guide.update(dt);
+      this.police.update(dt);
       this.npcs.update(dt);
       this.traffic.update(dt);
       this.heat.update(dt);
@@ -296,6 +309,7 @@ export class Game {
       this.world.update(dt);
       this.physics.step(dt);
       this.fx.update(dt);
+      this.destruction.update(dt);
       this.sky.update(dt, this.player.pos, this.camera.position);
       if (this.input.pressed('KeyN')) {
         const on = this.audio.toggleMusic();

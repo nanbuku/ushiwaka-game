@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FORCE_NAME } from '../gameplay/Responders';
 import type { Game } from '../core/Game';
 import { DISTRICT_LABEL, HALF } from '../world/Layout';
 
@@ -21,6 +22,8 @@ export class HUD {
   private evilFill!: HTMLDivElement;
   private evilValue!: HTMLSpanElement;
   private hpFill!: HTMLDivElement;
+  private heatLabel!: HTMLSpanElement;
+  private armorFill!: HTMLDivElement;
   private clock!: HTMLDivElement;
   private place!: HTMLDivElement;
   private prompt!: HTMLDivElement;
@@ -56,6 +59,7 @@ export class HUD {
         <div class="bar evil"><div></div></div>
         <div class="meter-sub"><span>うしわかの元気</span></div>
         <div class="bar hp"><div></div></div>
+        <div class="bar armor"><div></div></div>
       </div>
       <div class="panel status"><div class="clock">09:00</div><div class="place">ひだまり町</div><div class="heat"><span class="heat-label">保健所</span><span class="heat-icons"></span></div></div>
       <div class="panel request hidden"></div>
@@ -67,7 +71,7 @@ export class HUD {
       <div class="charge"><div></div></div>
       <div class="toasts"></div>
       <canvas class="minimap" width="200" height="200"></canvas>
-      <div class="help">WASD 移動 / Shift 走る / Space ジャンプ / 左クリック 噛む / 右クリック 吠える（長押しで大吠え） / E くわえる・話す / Q 投げる / F 乗り物 / 1〜8・R 武器 / G 起爆 / M 地図 / N 音楽</div>
+      <div class="help">WASD 移動 / Shift 走る / Space ジャンプ（二段・壁） / C ダッシュ / V 回転 / X シールド / Z 死んだふり / 左クリック 噛む・撃つ / 右クリック 吠える / E くわえる・話す / Q 投げる / F 乗り物 / 1〜0・R 武器 / G 起爆 / M 地図 / N 音楽</div>
       <div class="vignette"></div>
       <div class="flash"></div>
       <div class="fade"></div>
@@ -80,6 +84,8 @@ export class HUD {
     this.evilFill = q('.bar.evil > div');
     this.evilValue = q('.ev');
     this.hpFill = q('.bar.hp > div');
+    this.heatLabel = q('.heat-label') as unknown as HTMLSpanElement;
+    this.armorFill = q('.bar.armor > div');
     this.clock = q('.clock');
     this.place = q('.place');
     this.prompt = q('.prompt');
@@ -124,7 +130,8 @@ export class HUD {
         <div><b>WASD</b> 移動　<b>Shift</b> 走る　<b>Space</b> ジャンプ　<b>マウス</b> カメラ</div>
         <div><b>左クリック</b> 噛みつく　<b>右クリック</b> 吠える（長押しで大吠え）</div>
         <div><b>E</b> くわえる・はなす・話す　<b>Q</b> 投げる　<b>F</b> 乗り物に乗る・降りる　<b>M</b> 地図　<b>N</b> 音楽　<b>Esc</b> 一時停止</div>
-        <div><b>1〜8 / R</b> 武器の持ち替え　<b>G</b> 仕掛けた爆弾を起爆（武器は街のあちこちに落ちている）</div>
+        <div><b>1〜9, 0, -, ^ / R</b> 武器の持ち替え（一度拾えば無制限）　<b>G</b> 仕掛けた爆弾を起爆</div>
+        <div><b>C / Ctrl</b> ダッシュ　<b>V</b> 回転アタック　<b>X</b> もふもふシールド　<b>Z</b> 死んだふり（追っ手に見失われる）</div>
       </div>
       <div class="note">音が出ます。クリックするとマウスがゲーム画面に固定されます（Escで解除）。</div>`;
     this.overlay.querySelector('.new')?.addEventListener('click', () => onStart(true));
@@ -412,6 +419,8 @@ export class HUD {
     this.evilValue.textContent = devil ? `${Math.round(k.evil)}` : `${Math.round(k.evil)} / 100`;
     this.evilFill.style.width = `${Math.min(100, k.evil)}%`;
     this.hpFill.style.width = `${(g.player.hp / g.player.maxHp) * 100}%`;
+    this.armorFill.style.width = `${(g.player.armor / g.player.maxArmor) * 100}%`;
+    (this.armorFill.parentElement as HTMLDivElement).style.display = g.player.armor > 0.5 ? '' : 'none';
     this.clock.textContent = g.sky.clockText;
     this.place.textContent = DISTRICT_LABEL[g.world.district(g.player.pos.x, g.player.pos.z)] + (g.world.zoneAt(g.player.pos.x, g.player.pos.z) === 'supermarket' ? '・スーパーまるなか' : '');
     const hint = g.dialogue.active ? '' : g.player.hint;
@@ -431,6 +440,7 @@ export class HUD {
     let icons = '';
     for (let i = 0; i < 5; i++) icons += `<i class="${i < lv ? 'on' : i === lv && part > 0.05 ? 'half' : ''}"></i>`;
     if (this.heatIcons.innerHTML !== icons) this.heatIcons.innerHTML = icons;
+    if (this.heatLabel.textContent !== FORCE_NAME[lv]) this.heatLabel.textContent = FORCE_NAME[lv];
     this.heatBox.classList.toggle('seen', g.heat.seen && lv > 0);
     // おつかい（目的地の方向と距離）
     const rl = g.requests.label;
@@ -446,9 +456,9 @@ export class HUD {
     this.request.classList.toggle('done', g.requests.complete);
     // 武器
     const wh = g.weapons.hud;
-    const wt = `<div class="w-cur">${wh.name} <span>${wh.ammo === '∞' ? '' : '×' + wh.ammo}</span></div>` + `<div class="w-list">${wh.owned.map((o) => `<span class="${o.id === wh.current ? 'on' : ''}">${o.key} ${o.name}${o.ammo === '∞' ? '' : ' ' + o.ammo}</span>`).join('')}</div>` + (wh.charges ? `<div class="w-c4">仕掛けた爆弾 ${wh.charges}個　<b>G</b> で起爆</div>` : '');
+    const wt = `<div class="w-cur">${wh.name} <span>${wh.ammo === '∞' ? '' : '×' + wh.ammo}</span></div>` + `<div class="w-list">${wh.owned.map((o) => `<span class="${o.id === wh.current ? 'on' : ''}">${o.key} ${o.name}${o.ammo === '∞' ? '' : ' ' + o.ammo}</span>`).join('')}</div>` + (wh.note ? `<div class="w-c4">${wh.note}</div>` : '');
     if (this.weaponsEl.innerHTML !== wt) this.weaponsEl.innerHTML = wt;
-    this.crosshair.classList.toggle('hidden', !wh.aim || !!g.player.driving);
+    this.crosshair.classList.toggle('hidden', !(wh.aim && !g.player.driving) && g.player.driving?.kind !== 'tank');
     // 速度計
     const dv = g.player.driving;
     this.speedo.classList.toggle('hidden', !dv);

@@ -111,6 +111,13 @@ body {
 .bar.hp > div {
   background: linear-gradient(90deg, #ffffff, #bfe3ff);
 }
+.bar.armor {
+  height: 4px;
+  margin-top: 3px;
+}
+.bar.armor > div {
+  background: linear-gradient(90deg, #7aa6d6, #3d6fb0);
+}
 .status {
   position: absolute;
   top: 16px;

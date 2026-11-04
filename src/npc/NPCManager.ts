@@ -3,7 +3,7 @@ import type { Game } from '../core/Game';
 import { rand } from '../core/Rng';
 import type { District } from '../world/Layout';
 import type { StaticSpot } from '../world/World';
-import { makeLook, type HumanKind } from './Human';
+import { ARMED, makeLook, type HumanKind } from './Human';
 import { createHuman } from './KenneyHuman';
 import { NPC } from './NPC';
 
@@ -51,9 +51,9 @@ export class NPCManager {
     const district = g.world.district(p.x, p.z);
     const target = DENSITY[district];
     this.spawnT -= dt;
-    const roaming = this.list.filter((n) => n.alive && !n.home && n.kind !== 'catcher').length;
-    // 通報レベルに応じて保健所の職員を出す
-    const want = [0, 1, 2, 4, 6, 8][g.heat.level] ?? 8;
+    const roaming = this.list.filter((n) => n.alive && !n.home && n.kind !== 'catcher' && !ARMED.includes(n.kind)).length;
+    // 通報レベルに応じて保健所の職員を出す（レベル2からは警察が引き継ぐ）
+    const want = [0, 2, 2, 2, 1, 0][g.heat.level] ?? 0;
     const catchers = this.list.filter((n) => n.kind === 'catcher' && n.alive).length;
     this.catcherT -= dt;
     if (catchers < want && this.catcherT <= 0 && !g.capture.active) {
@@ -92,7 +92,7 @@ export class NPCManager {
     }
   }
 
-  private create(kind: HumanKind, x: number, y: number, z: number) {
+  create(kind: HumanKind, x: number, y: number, z: number) {
     const model = createHuman(this.game.assets, makeLook(kind, rand), kind);
     const n = new NPC(this.game, kind, model, x, y, z);
     this.list.push(n);

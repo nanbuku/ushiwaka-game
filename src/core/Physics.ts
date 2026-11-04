@@ -37,6 +37,8 @@ export class Physics {
   world!: RAPIER.World;
   /** 地形・建物などの静的コライダーをまとめてぶら下げる固定ボディ */
   staticBody!: RAPIER.RigidBody;
+  /** 静的コライダーが作られるたびに呼ばれる（壊せる物の登録に使う） */
+  onStatic?: (c: RAPIER.Collider) => void;
 
   async init() {
     await RAPIER.init();
@@ -49,14 +51,18 @@ export class Physics {
       .setTranslation(x, y, z)
       .setRotation(quatY(rotY))
       .setCollisionGroups(groups(G.STATIC, G.ALL));
-    return this.world.createCollider(desc, this.staticBody);
+    const c = this.world.createCollider(desc, this.staticBody);
+    this.onStatic?.(c);
+    return c;
   }
 
   staticCylinder(x: number, y: number, z: number, halfH: number, r: number) {
     const desc = RAPIER.ColliderDesc.cylinder(halfH, r)
       .setTranslation(x, y, z)
       .setCollisionGroups(groups(G.STATIC, G.ALL));
-    return this.world.createCollider(desc, this.staticBody);
+    const c = this.world.createCollider(desc, this.staticBody);
+    this.onStatic?.(c);
+    return c;
   }
 
   step(dt: number) {

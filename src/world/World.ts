@@ -48,7 +48,7 @@ export class World {
   homeArea: Rect = { x0: 0, x1: 0, z0: 0, z1: 0 };
   staticSpots: StaticSpot[] = [];
   /** 武器が落ちている場所 */
-  weaponSpots: { id: WeaponId; x: number; y: number; z: number }[] = [];
+  weaponSpots: { id: WeaponId | 'vest'; x: number; y: number; z: number }[] = [];
   /** 乗れる乗り物の駐車場所 */
   vehicleSpots: { x: number; y: number; z: number; yaw: number; kind: VehicleKind }[] = [];
   animated: Animated[] = [];
@@ -68,6 +68,11 @@ export class World {
     this.lots = computeLots();
     this.roads = computeRoads();
     this.b = new WorldBuilder(this.game.physics, this.rng, this.game.assets);
+    // 家・ビル・木などを「壊せる物」として登録する
+    const dest = this.game.destruction;
+    this.b.dest = dest;
+    this.b.batch.onAdd = (h) => dest.addHandle(h);
+    this.game.physics.onStatic = (c) => dest.addCollider(c);
     this.buildGround();
     this.buildRoads();
     for (const lot of this.lots) {
@@ -83,6 +88,9 @@ export class World {
     }
     this.nav.buildFromLots(this.lots);
     const stats = this.b.finish(this.root);
+    this.game.physics.onStatic = undefined;
+    this.b.batch.onAdd = undefined;
+    this.b.dest = null;
     this.game.scene.add(this.root);
     console.info(`[world] built in ${(performance.now() - t0).toFixed(0)}ms`, stats, 'nav nodes', this.nav.nodes.length);
   }

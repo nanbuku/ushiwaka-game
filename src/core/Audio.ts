@@ -31,7 +31,11 @@ export type Sfx =
   | 'whistle'
   | 'glass'
   | 'beep'
-  | 'mega';
+  | 'mega'
+  | 'gun'
+  | 'cannon'
+  | 'nuke'
+  | 'siren';
 
 /** WebAudio で効果音をその場で合成する（素材ファイル不要） */
 export class AudioSys {
@@ -202,6 +206,29 @@ export class AudioSys {
         break;
       case 'mega':
         this.tone(out, t, 'sine', 2400, 3200, 0.35, 0.3);
+        break;
+      case 'gun':
+        this.noiseHit(out, t, 0.09, 'bandpass', 1400, 1.0);
+        this.tone(out, t, 'square', 180, 60, 0.07, 0.45);
+        this.noiseHit(out, t + 0.02, 0.25, 'lowpass', 900, 0.25);
+        break;
+      case 'cannon': {
+        const ws = this.distortion(out, 30);
+        this.noiseHit(ws, t, 0.9, 'lowpass', 1100, 1.0);
+        this.tone(ws, t, 'sine', 140, 30, 0.7, 1.0);
+        break;
+      }
+      case 'nuke': {
+        const ws = this.distortion(out, 40);
+        this.noiseHit(ws, t, 6, 'lowpass', 380, 1.0);
+        this.tone(ws, t, 'sine', 60, 18, 5, 1.0);
+        this.noiseHit(out, t, 0.6, 'highpass', 1800, 0.6);
+        this.noiseHit(out, t + 1.2, 4, 'lowpass', 220, 0.8);
+        break;
+      }
+      case 'siren':
+        this.tone(out, t, 'sawtooth', 760, 960, 0.6, 0.16, 2200);
+        this.tone(out, t + 0.6, 'sawtooth', 960, 760, 0.6, 0.16, 2200);
         break;
       case 'pop':
         this.noiseHit(out, t, 0.12, 'bandpass', 1800, 1.0);

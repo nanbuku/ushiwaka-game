@@ -3,7 +3,7 @@ import type { Game } from '../core/Game';
 import { clamp, rand } from '../core/Rng';
 import type { CrimeKind } from './Karma';
 
-const GAIN: Record<CrimeKind, number> = { faint: 0.25, steal: 0.45, shrine: 0.5, bite: 0.8, kill: 1.6, bomb: 1.8 };
+const GAIN: Record<CrimeKind, number> = { faint: 0.25, steal: 0.45, shrine: 0.5, bite: 0.8, kill: 1.6, bomb: 1.8, wreck: 0.7, shoot: 0.9 };
 
 /**
  * 通報レベル（0〜5）。目撃者がいる悪事で上がり、保健所の職員が追ってくる。
@@ -30,6 +30,8 @@ export class Heat {
     const witnesses = g.npcs.witnesses(pos, radius);
     let gain = GAIN[kind] * (witnesses > 0 ? 1 : 0.25);
     if (victimIsCatcher) gain += 0.8;
+    // 上のレベルほど上がりにくい（大きな事件でないと軍は来ない）
+    gain /= 1 + Math.max(0, this.value - 1.5) * 0.5;
     if (kind === 'steal' && witnesses > 0) g.hud.popText(pos.clone().setY(pos.y + 1.6), rand.pick(['どろぼう!', '万引きよ!', 'あっ、犬が!']), '#ffd166', 22);
     this.value = clamp(this.value + gain, 0, 5.99);
     this.unseenT = 0;
@@ -47,21 +49,24 @@ export class Heat {
     // 職員に見られているか
     let nearest = Infinity;
     for (const n of g.npcs.list) {
-      if (n.kind !== 'catcher' || !n.conscious) continue;
+      if ((n.kind !== 'catcher' && n.state !== 'armed') || !n.conscious) continue;
       nearest = Math.min(nearest, Math.hypot(n.pos.x - p.x, n.pos.z - p.z));
     }
-    this.seen = nearest < 32;
+    for (const c of g.police.cars) nearest = Math.min(nearest, Math.hypot(c.v.pos.x - p.x, c.v.pos.z - p.z));
+    // 死んだふりをしていると見失う
+    const fooled = g.player.playDead && !g.player.driving;
+    this.seen = nearest < 32 && !fooled;
     if (!this.seen) {
-      this.unseenT += dt;
-      if (this.unseenT > 10) this.value = Math.max(0, this.value - dt * 0.09);
+      this.unseenT += dt * (fooled ? 3 : 1);
+      if (this.unseenT > 10) this.value = Math.max(0, this.value - dt * 0.09 * (fooled ? 3 : 1));
     } else this.unseenT = 0;
 
     const lv = this.level;
     if (lv > this.lastLevel) {
-      g.hud.toast(lv >= 4 ? '保健所の特別捕獲班が出動した！' : `通報レベル ${lv}　保健所の職員が向かっている！`, 'bad', 4);
+      if (lv === 1) g.hud.toast('通報レベル 1　保健所の職員が向かっている！', 'bad', 4);
       g.audio.play('evil', undefined, 0.35);
     } else if (lv === 0 && this.lastLevel > 0) {
-      g.hud.toast('保健所の追跡をふりきった', 'info', 3);
+      g.hud.toast('追っ手をふりきった', 'info', 3);
     }
     this.lastLevel = lv;
 

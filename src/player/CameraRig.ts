@@ -3,6 +3,8 @@ import type { Game } from '../core/Game';
 import { G } from '../core/Physics';
 import { clamp, damp, lerp } from '../core/Rng';
 
+const AIM_WEAPONS = ['rocket', 'molotov', 'pistol', 'smg', 'missile'];
+
 /** 三人称カメラ（マウスで回転、ホイールで距離、壁にめり込まない） */
 export class CameraRig {
   yaw = 0;
@@ -15,6 +17,7 @@ export class CameraRig {
   private shake = 0;
   private idleMouse = 0;
   private carDist = 6.5;
+  private aimK = 0;
 
   constructor(private game: Game) {}
 
@@ -51,10 +54,16 @@ export class CameraRig {
         this.pitch += (0.22 - this.pitch) * damp(2, dt);
       }
     }
-    this.dist = lerp(this.dist, v ? this.carDist : this.targetDist, damp(6, dt));
-    const tx = v ? v.pos.x : p.pos.x;
-    const ty = v ? v.pos.y + v.spec.height * 0.8 : p.pos.y + 0.5 + p.visualYOffset;
-    const tz = v ? v.pos.z : p.pos.z;
+    const tank = v?.kind === 'tank';
+    this.dist = lerp(this.dist, v ? this.carDist * (tank ? 1.7 : 1) : this.targetDist, damp(6, dt));
+    // 銃などで狙うときは肩ごしの視点（うしわかを左下に寄せ、画面の中央を照準にする）
+    const aiming = !v && AIM_WEAPONS.includes(g.weapons.current) && !p.carrying;
+    this.aimK += ((aiming ? 1 : 0) - this.aimK) * damp(6, dt);
+    const ox = Math.cos(this.yaw) * 0.65 * this.aimK;
+    const oz = -Math.sin(this.yaw) * 0.65 * this.aimK;
+    const tx = v ? v.pos.x : p.pos.x + ox;
+    const ty = v ? v.pos.y + v.spec.height * (tank ? 1.35 : 0.8) : p.pos.y + 0.5 + p.visualYOffset + this.aimK * 0.5;
+    const tz = v ? v.pos.z : p.pos.z + oz;
     const k = damp(22, dt);
     this.focus.x = lerp(this.focus.x, tx, k);
     this.focus.z = lerp(this.focus.z, tz, k);

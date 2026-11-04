@@ -162,6 +162,13 @@ export class KenneyHuman implements HumanLike {
       cane.position.set(0, -0.4 * H, 0.04);
       this.hand.add(cane);
     }
+    if (L.gun) {
+      const black = colorMat('#1b1b1e');
+      const len = L.gun === 'rifle' ? 0.75 : 0.22;
+      const g = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, len), black);
+      g.position.set(0, -0.02, len / 2 - 0.04);
+      this.hand.add(g);
+    }
     if (L.net) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.5, 6), colorMat('#8a8a8a'));
       pole.rotation.x = Math.PI / 2;
