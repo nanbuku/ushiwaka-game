@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import { Rng } from '../core/Rng';
 import { WorldBuilder } from './Builder';
+import { buildOutskirts, EDGE, terrainHeight } from './Outskirts';
 import { buildDistrictLot } from './districts';
 import { computeLots, computeRoads, districtAt, HALF, inRect, LINES, ROAD, type District, type Lot, type Rect, type RoadKind, type RoadSeg } from './Layout';
 import { NavGraph } from './Navigation';
@@ -31,6 +32,10 @@ const GROUND_COLOR: Record<District, string> = {
   amusement: '#e6d6bd',
   countryHill: '#7fae58',
   countryField: '#8bb862',
+  mountain: '#76a052',
+  airport: '#a9aba5',
+  highrise: '#b9b8b2',
+  lake: '#86b35e',
 };
 
 /** 街全体（地面・道路・建物・経路グラフ）を作って保持する */
@@ -82,6 +87,7 @@ export class World {
       buildDistrictLot(this, lot);
     }
     this.buildBorders();
+    buildOutskirts(this);
     this.buildTrafficLights();
     if (this.wirePts.length) {
       const geo = new THREE.BufferGeometry();
@@ -108,6 +114,7 @@ export class World {
 
   /** 地面の高さ（歩道付き区画の上は 0.15） */
   groundHeight(x: number, z: number) {
+    if (z < -305) return terrainHeight(x, z);
     const l = this.lotAt(x, z);
     if (l && l.raised && x >= l.x0 && x <= l.x1 && z >= l.z0 && z <= l.z1) return l.y;
     return 0;
@@ -134,8 +141,8 @@ export class World {
   // ---------- 地面 ----------
   private buildGround() {
     const b = this.b;
-    b.flat('ground', 0, -0.02, 0, 1600, 1600, '#76a052');
-    this.game.physics.staticBox(0, -1, 0, 800, 1, 800);
+    b.flat('ground', 0, -0.02, 0, 3000, 3000, '#76a052');
+    this.game.physics.staticBox(0, -1, 0, 1500, 1, 1500);
   }
 
   private buildLotBase(lot: Lot) {
@@ -326,25 +333,17 @@ export class World {
     const b = this.b;
     const rng = this.rng;
     // 見えない壁
-    const W = HALF + 22;
-    this.game.physics.staticBox(0, 10, -W, W + 10, 20, 1);
-    this.game.physics.staticBox(0, 10, W, W + 10, 20, 1);
-    this.game.physics.staticBox(-W, 10, 0, 1, 20, W + 10);
-    this.game.physics.staticBox(W, 10, 0, 1, 20, W + 10);
-    // 外周の林と遠景の山
-    for (let i = 0; i < 260; i++) {
-      const ang = rng.range(0, Math.PI * 2);
-      const r = rng.range(HALF + 16, HALF + 60);
-      const x = Math.max(-HALF - 60, Math.min(HALF + 60, Math.cos(ang) * r * 1.42));
-      const z = Math.max(-HALF - 60, Math.min(HALF + 60, Math.sin(ang) * r * 1.42));
-      if (Math.abs(x) < HALF + 14 && Math.abs(z) < HALF + 14) continue;
-      b.tree(x, z, 0, rng.range(1.2, 2.2), rng.chance(0.5) ? 'pine' : 'round');
-    }
+    const W = EDGE + 2;
+    this.game.physics.staticBox(0, 150, -W, W + 10, 300, 1);
+    this.game.physics.staticBox(0, 150, W, W + 10, 300, 1);
+    this.game.physics.staticBox(-W, 150, 0, 1, 300, W + 10);
+    this.game.physics.staticBox(W, 150, 0, 1, 300, W + 10);
+    // 遠景の山
     for (let i = 0; i < 46; i++) {
       const ang = (i / 46) * Math.PI * 2 + rng.range(-0.05, 0.05);
-      const r = rng.range(470, 560);
-      const h = rng.range(70, 170);
-      const s = rng.range(160, 260);
+      const r = rng.range(900, 1050);
+      const h = rng.range(140, 300);
+      const s = rng.range(300, 460);
       b.batch.add('cone', WorldBuilder.mat(Math.cos(ang) * r, -2, Math.sin(ang) * r, rng.range(0, 6), s, h, s), rng.pick(['#4f7a52', '#5b8459', '#46704c', '#6b8a64']));
     }
     void LINES;

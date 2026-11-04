@@ -557,6 +557,8 @@ export class Ushiwaka {
   get hint(): string {
     const g = this.game;
     if (this.dead) return '';
+    if (this.driving?.kind === 'jet') return `W/S 加速・減速　マウス 操縦　左クリック 機関砲　右クリック ミサイル　F 飛び降りる`;
+    if (this.driving?.kind === 'balloon') return `W 上昇　S 下降　Space 前進　A/D 向き　F 降りる`;
     if (this.driving?.kind === 'tank') return `F: 降りる　W/S: 前進・後退　A/D: その場で旋回　マウス: 砲塔を向ける　左クリック: 主砲`;
     if (this.driving) return `F: 降りる（走行中は飛び降り）　W/S: アクセル・ブレーキ　A/D: ハンドル　Space: サイドブレーキ（ドリフト）　右クリック: クラクション`;
     const veh = g.traffic.nearest(this.pos, 1.6);

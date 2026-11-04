@@ -19,7 +19,9 @@ export type VehicleKind =
   | 'scooter'
   | 'motorbike'
   | 'bicycle'
-  | 'tank';
+  | 'tank'
+  | 'jet'
+  | 'balloon';
 
 export interface VehicleSpec {
   halfW: number;
@@ -76,6 +78,8 @@ export const SPECS: Record<VehicleKind, VehicleSpec> = {
   scooter: base({ name: 'スクーター', halfW: 0.32, halfL: 0.9, height: 1.15, maxSpeed: 22, accel: 11, brake: 15, grip: 13, steerMax: 0.65, reverseMax: 3, wheelR: 0.24, seat: [0, 0.62, -0.15], bike: true }),
   motorbike: base({ name: 'バイク', halfW: 0.36, halfL: 1.05, height: 1.2, maxSpeed: 41, accel: 17, brake: 18, grip: 16, steerMax: 0.6, reverseMax: 3, wheelR: 0.32, seat: [0, 0.78, -0.2], bike: true }),
   tank: base({ name: '戦車', halfW: 1.7, halfL: 3.3, height: 2.3, maxSpeed: 17, accel: 5.5, brake: 12, grip: 30, steerMax: 0.9, reverseMax: 7, wheelR: 0.42, seat: [0, 2.05, -0.55] }),
+  jet: base({ name: '戦闘機', halfW: 1.5, halfL: 5.8, height: 2.4, maxSpeed: 95, accel: 20, brake: 16, grip: 30, steerMax: 0.6, reverseMax: 0, wheelR: 0.35, seat: [0, 1.55, 1.6] }),
+  balloon: base({ name: '気球', halfW: 1.0, halfL: 1.0, height: 1.2, maxSpeed: 8, accel: 2, brake: 3, grip: 10, steerMax: 0.5, reverseMax: 0, wheelR: 0.2, seat: [0, 0.55, 0] }),
   bicycle: base({ name: '自転車', halfW: 0.28, halfL: 0.85, height: 1.1, maxSpeed: 11, accel: 4.5, brake: 10, grip: 11, steerMax: 0.7, reverseMax: 2, wheelR: 0.33, seat: [0, 0.72, -0.2], bike: true }),
 };
 
@@ -123,6 +127,8 @@ export class VehicleModel {
   turret: THREE.Group | null = null;
   barrel: THREE.Group | null = null;
   muzzle: THREE.Object3D | null = null;
+  /** 気球のバーナーの炎 */
+  flame: THREE.Mesh | null = null;
   color: string;
   spec: VehicleSpec;
 
@@ -139,6 +145,15 @@ export class VehicleModel {
     if (kind === 'tank') {
       this.color = '#5b6b3a';
       this.buildTank();
+      return;
+    }
+    if (kind === 'jet' || kind === 'balloon') {
+      this.color = kind === 'jet' ? '#7d8794' : '#e63946';
+      this.root.rotation.order = 'YXZ';
+      if (kind === 'jet') this.buildJet();
+      else this.buildBalloon();
+      this.seat.position.set(...s.seat);
+      this.body.add(this.seat);
       return;
     }
     this.color = kind === 'taxi' ? '#f2b705' : kind === 'catcherVan' ? '#f4f4f0' : CAR_COLORS[Math.floor(colorSeed * CAR_COLORS.length)];
@@ -253,6 +268,65 @@ export class VehicleModel {
     });
     this.seat.position.set(...s.seat);
     this.body.add(this.seat);
+  }
+
+  /** 戦闘機（前はローカル +z） */
+  private buildJet() {
+    const gray = colorMat('#7d8794', 0.45);
+    const dark = colorMat('#3a3f47', 0.5);
+    const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number) => {
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      this.body.add(mesh);
+      return mesh;
+    };
+    add(new THREE.CylinderGeometry(0.75, 0.6, 9, 14).rotateX(Math.PI / 2), gray, 0, 1.3, 0);
+    add(new THREE.ConeGeometry(0.75, 3, 14).rotateX(Math.PI / 2), gray, 0, 1.3, 6);
+    add(new THREE.SphereGeometry(1, 14, 10).scale(0.5, 0.45, 1.5), glassMat, 0, 1.85, 2.2);
+    add(new THREE.CylinderGeometry(0.62, 0.5, 0.8, 14).rotateX(Math.PI / 2), dark, 0, 1.3, -4.8);
+    const wing = new THREE.Shape();
+    wing.moveTo(0, 2.5);
+    wing.lineTo(5.2, -2.2);
+    wing.lineTo(5.2, -3.2);
+    wing.lineTo(0, -3.4);
+    const wg = new THREE.ExtrudeGeometry(wing, { depth: 0.12, bevelEnabled: false }).rotateX(Math.PI / 2);
+    for (const sx of [-1, 1]) {
+      const wm = add(wg, gray, 0, 1.1, 0);
+      wm.scale.x = sx;
+      const fin = add(new THREE.BoxGeometry(0.1, 1.9, 1.8), gray, sx * 0.55, 2.4, -3.8);
+      fin.rotation.z = sx * 0.3;
+      fin.rotation.x = 0.35;
+      add(new THREE.BoxGeometry(2.2, 0.08, 1.2), gray, sx * 1.4, 1.3, -4);
+    }
+    for (const [x, z] of [[0, 3.5], [-1.4, -0.5], [1.4, -0.5]]) add(new THREE.CylinderGeometry(0.06, 0.06, 0.8, 6), dark, x, 0.45, z);
+  }
+
+  /** 熱気球 */
+  private buildBalloon() {
+    const cols = ['#e63946', '#f4f1de', '#f2a541', '#2a9d8f', '#f4f1de', '#e76f51', '#457b9d', '#f4f1de'];
+    const n = cols.length;
+    for (let i = 0; i < n; i++) {
+      const gore = new THREE.Mesh(new THREE.SphereGeometry(5.2, 6, 14, (i / n) * Math.PI * 2, (Math.PI * 2) / n), colorMat(cols[i], 0.7));
+      gore.scale.y = 1.15;
+      gore.position.y = 9.5;
+      gore.castShadow = true;
+      this.body.add(gore);
+    }
+    const bottom = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 0.9, 1.6, 14, 1, true), colorMat('#e63946', 0.7));
+    bottom.position.y = 4.4;
+    this.body.add(bottom);
+    this.body.add(box(1.6, 1.0, 1.6, '#9a6b3a', 0, 0.5, 0));
+    for (const [x, z] of [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]]) {
+      const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 3.2, 4), colorMat('#5a4a3a'));
+      rope.position.set(x * 1.1, 2.6, z * 1.1);
+      this.body.add(rope);
+    }
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.3, 1.2, 10), new THREE.MeshBasicMaterial({ color: '#ffb347', transparent: true, opacity: 0.85 }));
+    flame.position.y = 3.4;
+    flame.visible = false;
+    this.body.add(flame);
+    this.flame = flame;
   }
 
   /** 防衛隊の戦車（コードで組み立てる） */

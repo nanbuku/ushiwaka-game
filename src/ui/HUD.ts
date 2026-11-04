@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { drawOutskirts } from '../world/Outskirts';
 import { FORCE_NAME } from '../gameplay/Responders';
 import type { Game } from '../core/Game';
 import { DISTRICT_LABEL, HALF } from '../world/Layout';
@@ -10,8 +11,12 @@ interface Pop {
   life: number;
 }
 
-const MAP_SIZE = 720;
-const MAP_SCALE = MAP_SIZE / 720; // 1px = 1m
+/** 地図の画像は 1px = 1m。拡張したマップ（±640m）が入る大きさ */
+const OFF = 680;
+const MAP_SIZE = OFF * 2;
+const MAP_SCALE = 1;
+/** 大きい地図（720px）への縮小率 */
+const BIG = 720 / MAP_SIZE;
 
 /** 画面上の表示（ゲージ・ミニマップ・通知・タイトルなど） */
 export class HUD {
@@ -225,9 +230,10 @@ export class HUD {
     c.width = MAP_SIZE;
     c.height = MAP_SIZE;
     const ctx = c.getContext('2d')!;
-    const tx = (x: number) => (x + 360) * MAP_SCALE;
+    const tx = (x: number) => (x + OFF) * MAP_SCALE;
     ctx.fillStyle = '#6f9a4e';
     ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+    drawOutskirts(ctx, tx);
     const col: Record<string, string> = {
       town: '#e9dfc9',
       city: '#c9ccd2',
@@ -258,18 +264,20 @@ export class HUD {
     this.mapCanvas = c;
     // 大きい地図
     const b = this.bigMap.getContext('2d')!;
-    b.drawImage(c, 0, 0);
+    b.drawImage(c, 0, 0, 720, 720);
+    const bt = (x: number) => (x + OFF) * BIG;
     b.font = 'bold 15px "M PLUS Rounded 1c", sans-serif';
     b.textAlign = 'center';
-    for (let r = 0; r < 3; r++)
-      for (let k = 0; k < 3; k++) {
-        const x = -200 + k * 200;
-        const z = -200 + r * 200;
+    const spots: [number, number][] = [[0, -500], [0, 470], [470, 0], [-475, 0]];
+    for (let r = 0; r < 3; r++) for (let k = 0; k < 3; k++) spots.push([-200 + k * 200, -200 + r * 200]);
+    b.font = 'bold 12px "M PLUS Rounded 1c", sans-serif';
+    for (const [x, z] of spots)
+      {
         const d = g.world.district(x, z);
         b.fillStyle = 'rgba(0,0,0,0.55)';
-        b.fillText(DISTRICT_LABEL[d], tx(x) + 1, tx(z) + 1);
+        b.fillText(DISTRICT_LABEL[d], bt(x) + 1, bt(z) + 1);
         b.fillStyle = '#ffffff';
-        b.fillText(DISTRICT_LABEL[d], tx(x), tx(z));
+        b.fillText(DISTRICT_LABEL[d], bt(x), bt(z));
       }
   }
 
@@ -284,7 +292,7 @@ export class HUD {
       this.bigBase.getContext('2d')!.drawImage(this.bigMap, 0, 0);
     }
     b.drawImage(this.bigBase, 0, 0);
-    const tx = (x: number) => (x + 360) * MAP_SCALE;
+    const tx = (x: number) => (x + OFF) * BIG;
     const dot = (x: number, z: number, r: number, fill: string, stroke = '#222') => {
       b.beginPath();
       b.arc(tx(x), tx(z), r, 0, Math.PI * 2);
@@ -333,7 +341,7 @@ export class HUD {
     ctx.translate(W / 2, W / 2);
     ctx.rotate(g.camRig.yaw);
     ctx.scale(zoom, zoom);
-    if (this.mapCanvas) ctx.drawImage(this.mapCanvas, -(p.x + 360) * MAP_SCALE, -(p.z + 360) * MAP_SCALE);
+    if (this.mapCanvas) ctx.drawImage(this.mapCanvas, -(p.x + OFF) * MAP_SCALE, -(p.z + OFF) * MAP_SCALE);
     for (const n of g.npcs.list) {
       const dx = n.pos.x - p.x;
       const dz = n.pos.z - p.z;
@@ -471,7 +479,7 @@ export class HUD {
     const wh = g.weapons.hud;
     const wt = `<div class="w-cur">${wh.name} <span>${wh.ammo === '∞' ? '' : '×' + wh.ammo}</span></div>` + `<div class="w-list">${wh.owned.map((o) => `<span class="${o.id === wh.current ? 'on' : ''}">${o.key} ${o.name}${o.ammo === '∞' ? '' : ' ' + o.ammo}</span>`).join('')}</div>` + (wh.note ? `<div class="w-c4">${wh.note}</div>` : '');
     if (this.weaponsEl.innerHTML !== wt) this.weaponsEl.innerHTML = wt;
-    this.crosshair.classList.toggle('hidden', !(wh.aim && !g.player.driving) && g.player.driving?.kind !== 'tank');
+    this.crosshair.classList.toggle('hidden', !(wh.aim && !g.player.driving) && g.player.driving?.kind !== 'tank' && g.player.driving?.kind !== 'jet');
     // 速度計
     const dv = g.player.driving;
     this.speedo.classList.toggle('hidden', !dv);

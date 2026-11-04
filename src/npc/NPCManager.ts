@@ -17,9 +17,17 @@ const DENSITY: Record<District, number> = {
   countryHill: 6,
   countryField: 7,
   riverside: 10,
+  mountain: 0,
+  airport: 0,
+  highrise: 0,
+  lake: 0,
 };
 
 const MIX: Record<District, Partial<Record<HumanKind, number>>> = {
+  mountain: { man: 1 },
+  airport: { man: 1, woman: 1, office: 1 },
+  highrise: { office: 1 },
+  lake: { man: 1, woman: 1, elderly: 1 },
   town: { man: 22, woman: 30, child: 16, elderly: 26, office: 6 },
   city: { office: 55, man: 20, woman: 20, elderly: 5 },
   downtown: { man: 36, woman: 40, office: 14, child: 5, elderly: 5 },

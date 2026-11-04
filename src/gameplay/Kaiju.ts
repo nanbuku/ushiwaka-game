@@ -16,6 +16,8 @@ export class Kaiju {
   hp = 9000;
   pos: THREE.Vector3;
   yaw = 0;
+  /** ミサイルが当たる半径（足元からの距離） */
+  hitR = 10;
   gone = false;
   dying = -1;
   collider: RAPIER.Collider;

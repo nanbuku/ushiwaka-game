@@ -55,14 +55,15 @@ export class CameraRig {
       }
     }
     const tank = v?.kind === 'tank';
-    this.dist = lerp(this.dist, v ? this.carDist * (tank ? 1.7 : 1) : this.targetDist, damp(6, dt));
+    const air = v?.kind === 'jet' ? 2.6 : v?.kind === 'balloon' ? 2.9 : tank ? 1.7 : 1;
+    this.dist = lerp(this.dist, v ? this.carDist * air : this.targetDist, damp(6, dt));
     // 銃などで狙うときは肩ごしの視点（うしわかを左下に寄せ、画面の中央を照準にする）
     const aiming = !v && AIM_WEAPONS.includes(g.weapons.current) && !p.carrying;
     this.aimK += ((aiming ? 1 : 0) - this.aimK) * damp(6, dt);
     const ox = Math.cos(this.yaw) * 0.65 * this.aimK;
     const oz = -Math.sin(this.yaw) * 0.65 * this.aimK;
     const tx = v ? v.pos.x : p.pos.x + ox;
-    const ty = v ? v.pos.y + v.spec.height * (tank ? 1.35 : 0.8) : p.pos.y + 0.5 + p.visualYOffset + this.aimK * 0.5;
+    const ty = v ? v.pos.y + (v.kind === 'balloon' ? 6 : v.spec.height * (tank ? 1.35 : 0.8)) : p.pos.y + 0.5 + p.visualYOffset + this.aimK * 0.5;
     const tz = v ? v.pos.z : p.pos.z + oz;
     const k = damp(22, dt);
     this.focus.x = lerp(this.focus.x, tx, k);

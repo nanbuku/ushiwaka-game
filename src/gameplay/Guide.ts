@@ -19,6 +19,10 @@ const CENTER: Record<District, [number, number]> = {
   riverside: [-200, 200],
   civic: [0, 200],
   downtown: [200, 200],
+  mountain: [0, -500],
+  airport: [0, 470],
+  highrise: [470, 0],
+  lake: [-475, 0],
 };
 
 /**

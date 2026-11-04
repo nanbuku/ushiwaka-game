@@ -298,6 +298,8 @@ export class Arsenal {
     for (const v of g.traffic.list) if (!v.wrecked && v !== g.player.driving) check(v, v.pos.clone().setY(v.pos.y + 1));
     const k = g.story.kaiju;
     if (k && k.alive) check(k as unknown as NPC, k.pos.clone().setY(k.pos.y + 8));
+    const sh = g.skyships.ship;
+    if (g.skyships.alive) check(sh as unknown as NPC, sh.pos);
     return best;
   }
 
@@ -581,6 +583,7 @@ export class Arsenal {
     this.tracers.update(dt);
     this.nukes.update(dt);
     if (p.driving?.kind === 'tank') this.tankControl(dt, p.driving);
+    if (p.driving?.kind === 'jet') this.jetControl(dt, p.driving);
     if (this.sawing > 0) {
       this.sawing -= dt;
       if (this.sawing <= 0) g.audio.sawOff();
@@ -643,6 +646,9 @@ export class Arsenal {
         }
       }
       if (!hit && pr.pos.y <= g.world.groundHeight(pr.pos.x, pr.pos.z)) hit = true;
+      // 大きな的（怪獣・飛行船）は近づいたら当たり
+      const big = pr.target as unknown as { pos: THREE.Vector3; hitR?: number } | null | undefined;
+      if (!hit && big?.hitR && pr.pos.distanceTo(big.pos) < big.hitR) hit = true;
       if (!hit && pr.kind !== 'molotov') {
         for (const n of g.npcs.list) if (n.alive && Math.hypot(n.pos.x - pr.pos.x, n.pos.z - pr.pos.z) < (pr.kind === 'rocket' ? 0.7 : 1.1) && pr.pos.y - n.pos.y < n.height && pr.pos.y > n.pos.y - 0.3) hit = true;
       }
@@ -745,6 +751,38 @@ export class Arsenal {
       cur.lerp(want, Math.min(1, dt * 5)).normalize();
       pr.vel.copy(cur.multiplyScalar(speed));
     } else pr.vel.setLength(speed);
+  }
+
+  /** 戦闘機：左クリック長押しで機関砲、右クリックで追尾ミサイル */
+  private jetControl(dt: number, v: Vehicle) {
+    const g = this.game;
+    const inp = g.input;
+    if (!inp.active || g.dialogue.active || g.paused) return;
+    const cp = Math.cos(v.pitch);
+    const fwd = new THREE.Vector3(Math.sin(v.yaw) * cp, Math.sin(v.pitch), Math.cos(v.yaw) * cp);
+    const nose = v.pos.clone().add(new THREE.Vector3(0, 1.3, 0)).addScaledVector(fwd, 7.5);
+    if (inp.mouseDown(0)) {
+      this.gunT -= dt;
+      while (this.gunT <= 0) {
+        this.gunT += 0.06;
+        const dir = fwd.clone().add(new THREE.Vector3(rand.range(-0.012, 0.012), rand.range(-0.012, 0.012), rand.range(-0.012, 0.012))).normalize();
+        const hit = castShot(g, nose, dir, 320, { exclude: v.collider });
+        this.tracers.add(nose, hit.point, '#ffe08a', 0.05);
+        playerShotHit(g, hit, 45, v.pos);
+        g.audio.play('gun', v.pos, 0.45, 1.3);
+      }
+    }
+    if (inp.mousePressed(2) && this.cd <= 0) {
+      this.cd = 0.9;
+      const target = this.lockTarget();
+      const mesh = weaponModel('missile');
+      mesh.scale.setScalar(2);
+      const side = new THREE.Vector3(Math.cos(v.yaw), 0, -Math.sin(v.yaw)).multiplyScalar(rand.chance(0.5) ? 2.5 : -2.5);
+      this.projectiles.push({ kind: 'missile', pos: v.pos.clone().add(side).setY(v.pos.y + 0.9), vel: fwd.clone().multiplyScalar(v.speed + 25), mesh, t: 0, target });
+      g.scene.add(mesh);
+      g.audio.play('whoosh', v.pos, 1, 0.6);
+      if (target) g.hud.popText(v.pos.clone().setY(v.pos.y + 3), 'ロックオン!', '#ff5d5d', 20);
+    }
   }
 
   /** 戦車：砲塔はマウスの向き、左クリックで主砲 */

@@ -59,6 +59,11 @@ export class Vehicle {
   slip = 0;
   steer = 0;
   yawRate = 0;
+  /** 機首の上下（戦闘機）と、左右の傾き */
+  pitch = 0;
+  roll = 0;
+  /** 気球の上下の速さ */
+  vy = 0;
   hp = 100;
   driver: 'none' | 'npc' | 'player' = 'none';
   /** 最後にプレイヤーが運転してからの秒数（無人の暴走車の責任判定） */
@@ -160,6 +165,8 @@ export class Vehicle {
    * 曲がっても速度はほとんど落ちず、速いほどハンドルが効きにくい（タイヤのグリップで制限）。
    */
   drive(dt: number, ctl: DriveInput | null) {
+    if (this.kind === 'jet') return this.fly(dt, ctl);
+    if (this.kind === 'balloon') return this.floatBalloon(dt, ctl);
     const s = this.spec;
     const thr = ctl?.thr ?? 0;
     const st = ctl?.st ?? 0;
@@ -207,6 +214,105 @@ export class Vehicle {
     if (this.driver === 'player') this.playerT = 0;
     else this.playerT += dt;
     this.damageEffects(dt);
+  }
+
+  /**
+   * 戦闘機の操縦。W/S で加速・減速、マウスで向けた方へ機首を向ける（A/D で補助）。
+   * 38m/s を超えると離陸でき、遅すぎると失速して落ちる。建物や地面に突っ込むと墜落。
+   */
+  private fly(dt: number, ctl: DriveInput | null) {
+    const g = this.game;
+    const s = this.spec;
+    const piloted = this.driver === 'player' && !!ctl;
+    const thr = ctl?.thr ?? 0;
+    if (thr > 0) this.speed = Math.min(s.maxSpeed, this.speed + s.accel * dt);
+    else if (thr < 0) this.speed = Math.max(0, this.speed - s.brake * dt);
+    else if (!piloted) this.speed = Math.max(0, this.speed - 5 * dt);
+    const gy = g.world.groundHeight(this.pos.x, this.pos.z);
+    const onGround = this.pos.y <= gy + 0.05;
+    const canLift = this.speed > 38;
+    let wantYaw = this.yaw;
+    let wantPitch = 0;
+    if (piloted) {
+      g.camera.getWorldDirection(_v);
+      wantYaw = Math.atan2(_v.x, _v.z);
+      wantPitch = clamp(Math.asin(clamp(_v.y, -1, 1)) + 0.22, -0.9, 0.9);
+    }
+    let dy = wantYaw - this.yaw;
+    while (dy > Math.PI) dy -= Math.PI * 2;
+    while (dy < -Math.PI) dy += Math.PI * 2;
+    const turn = onGround ? 0.7 : 1.15;
+    let yawRate = clamp(dy * 2.2, -turn, turn) + (ctl?.st ?? 0) * 0.6;
+    if (onGround) yawRate *= clamp(this.speed / 4, 0.25, 1);
+    this.yaw += yawRate * dt;
+    if (onGround) wantPitch = canLift ? Math.max(0, wantPitch) : 0;
+    this.pitch += clamp(wantPitch - this.pitch, -0.9 * dt, 0.9 * dt);
+    this.speed = Math.max(0, this.speed - Math.sin(this.pitch) * 7 * dt);
+    const cp = Math.cos(this.pitch);
+    let vyy = Math.sin(this.pitch) * this.speed;
+    if (!canLift && !onGround) vyy -= (1 - this.speed / 38) * 16;
+    const step = new THREE.Vector3(Math.sin(this.yaw) * cp * this.speed, vyy, Math.cos(this.yaw) * cp * this.speed).multiplyScalar(dt);
+    const len = step.length();
+    if (len > 0.01) {
+      const hit = g.physics.raycast(this.pos.clone().setY(this.pos.y + 1.2), step.clone().normalize(), len + 3, G.STATIC, this.collider);
+      if (hit && Math.abs(hit.normal.y) < 0.7) {
+        if (this.speed > 20) return this.crashJet();
+        this.speed = 0;
+        return;
+      }
+    }
+    const next = this.pos.clone().add(step);
+    const gy2 = g.world.groundHeight(next.x, next.z);
+    if (next.y <= gy2) {
+      if (vyy < -10 || this.pitch < -0.35) return this.crashJet();
+      next.y = gy2;
+      if (this.pitch < 0) this.pitch = 0;
+    }
+    this.pos.copy(next);
+    this.roll += (clamp(-yawRate * 0.9, -1.2, 1.2) - this.roll) * damp(4, dt);
+    this.body.setNextKinematicTranslation({ x: this.pos.x, y: this.pos.y, z: this.pos.z });
+    this.body.setNextKinematicRotation(quatY(this.yaw));
+    if (this.driver === 'player') this.playerT = 0;
+    else this.playerT += dt;
+    this.damageEffects(dt);
+  }
+
+  private crashJet() {
+    const g = this.game;
+    this.hp = 0;
+    this.speed = 0;
+    g.explode(this.pos.clone().setY(this.pos.y + 1), this.playerT < 15, 2);
+    if (!this.charred) this.blast(new THREE.Vector3(0, 4, 0));
+  }
+
+  /** 気球。W: 上昇（バーナー） S: 下降 Space: 前進 A/D: 向き。上空ほど風に流される */
+  private floatBalloon(dt: number, ctl: DriveInput | null) {
+    const g = this.game;
+    const thr = ctl?.thr ?? 0;
+    if (thr > 0) this.vy = Math.min(4, this.vy + 2.4 * dt);
+    else if (thr < 0) this.vy = Math.max(-4, this.vy - 2.4 * dt);
+    else this.vy += (-0.35 - this.vy) * damp(0.8, dt);
+    if (this.model.flame) this.model.flame.visible = thr > 0 && Math.sin(performance.now() * 0.05) > -0.6;
+    this.yaw += (ctl?.st ?? 0) * 0.5 * dt;
+    this.speed = clamp(this.speed + (ctl?.hand ? 2 : -1) * dt, 0, this.spec.maxSpeed);
+    const gy = g.world.groundHeight(this.pos.x, this.pos.z);
+    const wind = this.pos.y - gy > 15 ? 2.5 : 0;
+    const step = new THREE.Vector3(Math.sin(this.yaw) * this.speed + wind, 0, Math.cos(this.yaw) * this.speed).multiplyScalar(dt);
+    if (step.lengthSq() > 1e-6) {
+      const hit = g.physics.raycast(this.pos.clone().setY(this.pos.y + 0.6), step.clone().normalize(), step.length() + 1.5, G.STATIC, this.collider);
+      if (hit && Math.abs(hit.normal.y) < 0.7) step.set(0, 0, 0);
+    }
+    this.pos.add(step);
+    this.pos.y = Math.min(260, this.pos.y + this.vy * dt);
+    const gy2 = g.world.groundHeight(this.pos.x, this.pos.z);
+    if (this.pos.y < gy2) {
+      this.pos.y = gy2;
+      this.vy = Math.max(0, this.vy);
+    }
+    this.body.setNextKinematicTranslation({ x: this.pos.x, y: this.pos.y, z: this.pos.z });
+    this.body.setNextKinematicRotation(quatY(this.yaw));
+    if (this.driver === 'player') this.playerT = 0;
+    else this.playerT += dt;
   }
 
   private moveBy(dt: number) {
@@ -346,6 +452,10 @@ export class Vehicle {
     const r = this.model.root;
     r.position.copy(this.pos);
     r.rotation.y = this.yaw;
+    if (this.kind === 'jet') {
+      r.rotation.x = -this.pitch;
+      r.rotation.z = this.roll;
+    }
     this.model.animate(this.speed, this.steer, dt, this.lean);
   }
 

@@ -21,6 +21,7 @@ import { World } from '../world/World';
 import { Destruction } from '../world/Destruction';
 import { Responders } from '../gameplay/Responders';
 import { Story } from '../gameplay/Story';
+import { Skyships } from '../world/Skyships';
 import { AudioSys } from './Audio';
 import { EventBus } from './Events';
 import { Input } from './Input';
@@ -60,6 +61,7 @@ export class Game {
   destruction!: Destruction;
   police = new Responders(this);
   story = new Story(this);
+  skyships!: Skyships;
   sky!: SkySystem;
   world!: World;
   fx!: Effects;
@@ -120,6 +122,7 @@ export class Game {
     this.traffic = new Traffic(this);
     this.weapons.init();
     this.story.init();
+    this.skyships = new Skyships(this);
     this.dialogue = new Dialogue(this, document.body);
     this.hud.buildMap();
     this.player.teleport(this.world.spawn, this.world.spawnYaw);
@@ -260,6 +263,7 @@ export class Game {
     this.weapons.onExplosion(pos, R);
     this.destruction.damageArea(pos, R * 1.4, 380 * scale, true, byPlayer);
     this.story.onExplosion(pos, R, scale, byPlayer);
+    this.skyships.onExplosion(pos, R, scale, byPlayer);
     if (this.nanku.pos.distanceTo(pos) < 10) this.hud.popText(this.nanku.headPos(), this.karma.mode === 'devil' ? 'たーまやー！' : 'きゃあっ！', '#ff4d6d', 26);
     if (byPlayer) {
       this.karma.crime('bomb', pos);
@@ -309,6 +313,7 @@ export class Game {
       this.guide.update(dt);
       this.police.update(dt);
       this.story.update(dt);
+      this.skyships.update(dt);
       this.npcs.update(dt);
       this.traffic.update(dt);
       this.heat.update(dt);
