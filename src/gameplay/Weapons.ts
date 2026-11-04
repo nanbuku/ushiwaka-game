@@ -30,8 +30,11 @@ export const WEAPONS: Record<WeaponId, { name: string; help: string }> = {
   megaphone: { name: '拡声器', help: '左クリック: 拡声器で大吠え（お年寄りはショック死）' },
 };
 
+/** 落ちている物は回復系だけ（ジャーキー・大きな骨・もふもふベスト） */
+type PickId = 'heal' | 'bigheal' | 'vest';
+
 interface Pickup {
-  id: WeaponId | 'vest';
+  id: PickId;
   x: number;
   y: number;
   z: number;
@@ -41,7 +44,9 @@ interface Pickup {
 }
 
 interface Projectile {
-  kind: 'rocket' | 'molotov' | 'missile' | 'shell';
+  kind: 'rocket' | 'molotov' | 'missile' | 'shell' | 'mininuke';
+  /** ミサイルの最高速度（乗り物から撃つと、その乗り物より速い） */
+  maxSpeed?: number;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   mesh: THREE.Object3D;
@@ -76,7 +81,7 @@ interface Charge {
 }
 
 // ---------- 武器の見た目（口にくわえる／落ちているもの） ----------
-function weaponModel(id: WeaponId | 'vest'): THREE.Group {
+function weaponModel(id: WeaponId | PickId): THREE.Group {
   const g = new THREE.Group();
   const add = (geo: THREE.BufferGeometry, color: string, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, mat?: THREE.Material) => {
     const m = new THREE.Mesh(geo, mat ?? colorMat(color, 0.4));
@@ -136,6 +141,14 @@ function weaponModel(id: WeaponId | 'vest'): THREE.Group {
       add(new THREE.CylinderGeometry(0.083, 0.083, 0.03, 14), '#111111', 0, 0, 0.05, Math.PI / 2);
       add(new THREE.CylinderGeometry(0.083, 0.083, 0.03, 14), '#111111', 0, 0, -0.05, Math.PI / 2);
       break;
+    case 'heal':
+    case 'bigheal': {
+      const s = id === 'bigheal' ? 1.6 : 1;
+      const bone = id === 'bigheal' ? new THREE.MeshStandardMaterial({ color: '#ffd23f', metalness: 0.6, roughness: 0.3, emissive: '#7a5a00', emissiveIntensity: 0.4 }) : new THREE.MeshStandardMaterial({ color: '#f4ead6', roughness: 0.6 });
+      add(new THREE.CylinderGeometry(0.05 * s, 0.05 * s, 0.32 * s, 10), '', 0, 0, 0, 0, 0, Math.PI / 2, bone);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(new THREE.SphereGeometry(0.06 * s, 10, 8), '', sx * 0.17 * s, 0, sz * 0.045 * s, 0, 0, 0, bone);
+      break;
+    }
     case 'vest':
       add(new THREE.BoxGeometry(0.34, 0.36, 0.14), '#f6f1e6', 0, 0, 0);
       add(new THREE.BoxGeometry(0.36, 0.06, 0.16), '#7aa6d6', 0, 0.08, 0);
@@ -156,7 +169,9 @@ const _v = new THREE.Vector3();
 /** うしわかの武器庫（拾う・持ち替える・攻撃・設置した罠の管理） */
 export class Arsenal {
   /** 持っている武器（拾えば無制限に使える） */
-  ammo: Record<WeaponId, number> = { bite: Infinity, bat: 0, chainsaw: 0, pistol: 0, smg: 0, rocket: 0, missile: 0, molotov: 0, c4: 0, nuke: 0, caltrops: 0, megaphone: 0 };
+  ammo: Record<WeaponId, number> = { bite: Infinity, bat: Infinity, chainsaw: Infinity, pistol: Infinity, smg: Infinity, rocket: Infinity, missile: Infinity, molotov: Infinity, c4: Infinity, nuke: Infinity, caltrops: Infinity, megaphone: Infinity };
+  /** 銃の威力の倍率（ストーリーのごほうびで上がる） */
+  power = 1;
   current: WeaponId = 'bite';
   pickups: Pickup[] = [];
   charges: Charge[] = [];
@@ -183,17 +198,32 @@ export class Arsenal {
 
   /** ワールドの武器置き場から拾える武器を並べる */
   init() {
-    for (const s of this.game.world.weaponSpots) {
+    const g = this.game;
+    const spots: { id: PickId; x: number; y: number; z: number }[] = [];
+    // もと武器が置いてあった場所は、回復アイテムに
+    for (const s of g.world.weaponSpots) spots.push({ id: s.id === 'vest' ? 'vest' : rand.chance(0.7) ? 'heal' : 'bigheal', x: s.x, y: s.y, z: s.z });
+    // 町じゅうの歩道に多めに
+    const nodes = g.world.nav.nodes;
+    for (let k = 0; k < 120 && nodes.length; k++) {
+      const n = nodes[Math.floor(Math.random() * nodes.length)];
+      spots.push({ id: k % 6 === 0 ? 'vest' : k % 3 === 0 ? 'bigheal' : 'heal', x: n.x + rand.range(-1.5, 1.5), y: n.y, z: n.z + rand.range(-1.5, 1.5) });
+    }
+    // 外のエリアにも
+    const out: [number, number][] = [[-150, 455], [0, 455], [150, 455], [-100, -480], [60, -560], [410, -150], [410, 150], [490, 50], [-340, 100], [-340, -100], [670, -200], [670, 100], [670, 400], [900, -100], [905, -260], [1000, 330], [960, 260], [-970, 400], [-950, -40], [-805, 40], [-970, 200], [0, -330], [0, 380]];
+    const lm = g.world.landmarks;
+    for (const k of ['summit', 'base', 'airport', 'lake', 'range', 'island', 'carrier']) if (lm[k]) out.push([lm[k].x + 4, lm[k].z + 4]);
+    out.forEach(([x, z], k) => spots.push({ id: k % 4 === 0 ? 'vest' : k % 2 ? 'bigheal' : 'heal', x, y: g.world.groundHeight(x, z), z }));
+    for (const s of spots) {
       const mesh = new THREE.Group();
       const m = weaponModel(s.id);
-      m.scale.setScalar(1.7);
+      m.scale.setScalar(s.id === 'vest' ? 1.7 : 2.2);
       m.position.y = 0.45;
       mesh.add(m);
-      const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.5, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffd166', transparent: true, opacity: 0.6, depthWrite: false }));
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.5, 28).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: s.id === 'vest' ? '#7aa6d6' : '#7dff7a', transparent: true, opacity: 0.6, depthWrite: false }));
       ring.position.y = 0.03;
       mesh.add(ring);
       mesh.position.set(s.x, s.y, s.z);
-      this.game.scene.add(mesh);
+      g.scene.add(mesh);
       this.pickups.push({ id: s.id, x: s.x, y: s.y, z: s.z, mesh, active: true, respawn: 0 });
     }
   }
@@ -273,7 +303,7 @@ export class Arsenal {
     this.tracers.add(muzzle, hit.point);
     g.fx.sparks(muzzle);
     g.audio.play('gun', p.pos, this.current === 'smg' ? 0.55 : 0.8, this.current === 'smg' ? 1.15 : 1);
-    playerShotHit(g, hit, dmg, p.pos);
+    playerShotHit(g, hit, dmg * this.power, p.pos);
     // 撃てばまわりの人は逃げる
     if (Math.random() < 0.3) g.npcs.panicAround(p.pos, 25);
   }
@@ -298,6 +328,7 @@ export class Arsenal {
     for (const v of g.traffic.list) if (!v.wrecked && v !== g.player.driving) check(v, v.pos.clone().setY(v.pos.y + 1));
     const k = g.story.kaiju;
     if (k && k.alive) check(k as unknown as NPC, k.pos.clone().setY(k.pos.y + 8));
+    for (const c of g.airforce.targets()) check(c as unknown as NPC, c.pos);
     const sh = g.skyships.ship;
     if (g.skyships.alive) check(sh as unknown as NPC, sh.pos);
     return best;
@@ -366,7 +397,7 @@ export class Arsenal {
         const target = this.lockTarget();
         const mesh = weaponModel('missile');
         mesh.scale.setScalar(1.6);
-        this.projectiles.push({ kind: 'missile', pos: head.clone().add(dir.clone().multiplyScalar(0.5)), vel: dir.clone().multiplyScalar(30).add(new THREE.Vector3(0, 4, 0)), mesh, t: 0, target });
+        this.projectiles.push({ kind: 'missile', pos: head.clone().add(dir.clone().multiplyScalar(0.5)), vel: dir.clone().multiplyScalar(60).add(new THREE.Vector3(0, 3, 0)), mesh, t: 0, target, maxSpeed: 130 });
         g.scene.add(mesh);
         g.audio.play('whoosh', p.pos, 1, 0.6);
         g.audio.play('whistle', p.pos, 0.6, 0.5);
@@ -583,7 +614,7 @@ export class Arsenal {
     this.tracers.update(dt);
     this.nukes.update(dt);
     if (p.driving?.kind === 'tank') this.tankControl(dt, p.driving);
-    if (p.driving?.kind === 'jet') this.jetControl(dt, p.driving);
+    if (p.driving?.kind === 'jet' || p.driving?.kind === 'heli') this.jetControl(dt, p.driving);
     if (this.sawing > 0) {
       this.sawing -= dt;
       if (this.sawing <= 0) g.audio.sawOff();
@@ -592,7 +623,7 @@ export class Arsenal {
     for (const k of this.pickups) {
       if (!k.active) {
         k.respawn -= dt;
-        if (k.respawn < 0 && Math.hypot(k.x - p.pos.x, k.z - p.pos.z) > 30) {
+        if (k.respawn < 0 && Math.hypot(k.x - p.pos.x, k.z - p.pos.z) > 20) {
           k.active = true;
           k.mesh.visible = true;
         }
@@ -604,17 +635,17 @@ export class Arsenal {
         if (k.id === 'vest') {
           if (p.armor >= p.maxArmor - 1) continue;
           p.armor = p.maxArmor;
-          g.audio.play('pickup', p.pos, 0.9, 0.7);
-          g.hud.toast('もふもふベストを着た！（防具：ダメージを肩代わりする）', 'good', 3.5);
-          k.active = false;
-          k.respawn = 60;
-          k.mesh.visible = false;
-          continue;
+          g.hud.popText(p.headWorld(), '防具 満タン!', '#9fc4ff', 22);
+        } else {
+          if (p.hp >= p.maxHp - 0.5 && (k.id === 'heal' || p.armor >= p.maxArmor - 1)) continue;
+          p.hp = k.id === 'bigheal' ? p.maxHp : Math.min(p.maxHp, p.hp + p.maxHp * 0.45);
+          if (k.id === 'bigheal') p.armor = Math.min(p.maxArmor, p.armor + 50);
+          g.hud.popText(p.headWorld(), k.id === 'bigheal' ? '元気 全回復!' : '元気 回復!', '#7dff7a', 22);
         }
+        g.audio.play('pickup', p.pos, 0.9, 0.8);
         k.active = false;
-        k.respawn = 120;
+        k.respawn = 40;
         k.mesh.visible = false;
-        this.give(k.id);
       }
     }
     this.refreshHeld();
@@ -624,16 +655,16 @@ export class Arsenal {
       const pr = this.projectiles[i];
       pr.t += dt;
       const prev = pr.pos.clone();
-      if (pr.kind === 'missile') this.steerMissile(pr, dt);
+      if (pr.kind === 'missile' || pr.kind === 'mininuke') this.steerMissile(pr, dt);
       else pr.vel.y -= (pr.kind === 'rocket' ? 2 : pr.kind === 'shell' ? 3 : 18) * dt;
       pr.pos.addScaledVector(pr.vel, dt);
       pr.mesh.position.copy(pr.pos);
       if (pr.kind === 'rocket') {
         pr.mesh.lookAt(_v.copy(pr.pos).add(pr.vel));
         g.fx.sparks(pr.pos);
-      } else if (pr.kind === 'missile' || pr.kind === 'shell') {
+      } else if (pr.kind === 'missile' || pr.kind === 'shell' || pr.kind === 'mininuke') {
         pr.mesh.lookAt(_v.copy(pr.pos).add(pr.vel));
-        if (pr.kind === 'missile') g.fx.smoke(pr.pos.clone(), false);
+        if (pr.kind !== 'shell') g.fx.smoke(pr.pos.clone(), pr.kind === 'mininuke');
       } else pr.mesh.rotation.x += dt * 12;
       let hit = pr.t > (pr.kind === 'rocket' ? 3 : pr.kind === 'molotov' ? 4 : 6);
       const step = pr.pos.clone().sub(prev);
@@ -658,6 +689,7 @@ export class Arsenal {
         if (pr.kind === 'rocket') g.explode(pr.pos, true, 0.8);
         else if (pr.kind === 'missile') g.explode(pr.pos, true, 1.7);
         else if (pr.kind === 'shell') g.explode(pr.pos, true, 2.1);
+        else if (pr.kind === 'mininuke') this.nukes.detonate(pr.pos.clone(), 0.75);
         else {
           g.audio.play('glass', pr.pos, 1);
           g.audio.play('boom', pr.pos, 0.35, 1.8);
@@ -738,7 +770,7 @@ export class Arsenal {
 
   /** ミサイルを狙いに向けて曲げる */
   private steerMissile(pr: Projectile, dt: number) {
-    const speed = Math.min(62, 30 + pr.t * 60);
+    const speed = Math.min(pr.maxSpeed ?? 130, (pr.maxSpeed ? pr.maxSpeed * 0.7 : 60) + pr.t * 160);
     const t = pr.target;
     let want: THREE.Vector3 | null = null;
     if (t) {
@@ -773,15 +805,21 @@ export class Arsenal {
       }
     }
     if (inp.mousePressed(2) && this.cd <= 0) {
-      this.cd = 0.9;
+      // 戦闘機は少核弾頭、ヘリは追尾ミサイル。どちらも機体より速く飛ぶ
+      const jet = v.kind === 'jet';
+      this.cd = jet ? 3.5 : 0.7;
       const target = this.lockTarget();
-      const mesh = weaponModel('missile');
-      mesh.scale.setScalar(2);
-      const side = new THREE.Vector3(Math.cos(v.yaw), 0, -Math.sin(v.yaw)).multiplyScalar(rand.chance(0.5) ? 2.5 : -2.5);
-      this.projectiles.push({ kind: 'missile', pos: v.pos.clone().add(side).setY(v.pos.y + 0.9), vel: fwd.clone().multiplyScalar(v.speed + 25), mesh, t: 0, target });
+      const mesh = weaponModel(jet ? 'nuke' : 'missile');
+      mesh.scale.setScalar(jet ? 3 : 2);
+      const side = new THREE.Vector3(Math.cos(v.yaw), 0, -Math.sin(v.yaw)).multiplyScalar(rand.chance(0.5) ? 2.2 : -2.2);
+      const sp = Math.max(jet ? 150 : 140, Math.abs(v.speed) + (jet ? 95 : 110));
+      // 狙いは画面の中央（照準）の方向
+      const aim = new THREE.Vector3();
+      g.camera.getWorldDirection(aim);
+      this.projectiles.push({ kind: jet ? 'mininuke' : 'missile', pos: v.pos.clone().add(side).setY(v.pos.y + 0.9), vel: aim.multiplyScalar(sp), mesh, t: 0.3, target, maxSpeed: sp });
       g.scene.add(mesh);
-      g.audio.play('whoosh', v.pos, 1, 0.6);
-      if (target) g.hud.popText(v.pos.clone().setY(v.pos.y + 3), 'ロックオン!', '#ff5d5d', 20);
+      g.audio.play('whoosh', v.pos, 1, jet ? 0.4 : 0.6);
+      g.hud.popText(v.pos.clone().setY(v.pos.y + 3), jet ? (target ? '少核弾頭 ロックオン!' : '少核弾頭 発射!') : target ? 'ロックオン!' : '発射!', jet ? '#ffd23f' : '#ff5d5d', 22);
     }
   }
 

@@ -102,7 +102,7 @@ export class SkySystem {
     this.dome.frustumCulled = false;
     scene.add(this.dome);
 
-    this.fog = new THREE.Fog(0xc4e4ff, 110, 820);
+    this.fog = new THREE.Fog(0xc4e4ff, 120, 1050);
     scene.fog = this.fog;
   }
 

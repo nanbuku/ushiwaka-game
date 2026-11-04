@@ -107,7 +107,7 @@ export class Traffic {
       } else if (v.ai) this.stepAI(v, dt);
       else {
         // 無人の車（乗り捨て・飛び降り後）は惰性で進む
-        const flying = (v.kind === 'jet' || v.kind === 'balloon') && v.pos.y > this.game.world.groundHeight(v.pos.x, v.pos.z) + 0.05;
+        const flying = (v.kind === 'jet' || v.kind === 'balloon' || v.kind === 'heli') && v.pos.y > this.game.world.groundHeight(v.pos.x, v.pos.z) + 0.05;
         if (Math.abs(v.speed) > 0.05 || v.burnT >= 0 || v.hp < 35 || flying) v.drive(dt, null);
         v.sync(dt);
       }

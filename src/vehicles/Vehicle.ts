@@ -41,6 +41,9 @@ export interface DriveInput {
   thr: number;
   st: number;
   hand: boolean;
+  /** ヘリの上昇（Space）・下降（Shift） */
+  up?: boolean;
+  down?: boolean;
 }
 
 /** 車体の当たり判定を地面からこの高さだけ浮かせる（縁石や段差で止まらないように） */
@@ -117,6 +120,8 @@ export class Vehicle {
       this.body,
     );
     if (kind === 'tank') this.hp = 450;
+    if (kind === 'jet') this.hp = 220;
+    if (kind === 'heli') this.hp = 200;
     this.cc = w.createCharacterController(0.04);
     this.cc.setSlideEnabled(true);
     game.scene.add(this.model.root);
@@ -157,6 +162,8 @@ export class Vehicle {
       thr: (inp.down('KeyW') || inp.down('ArrowUp') ? 1 : 0) - (inp.down('KeyS') || inp.down('ArrowDown') ? 1 : 0),
       st: (inp.down('KeyA') ? 1 : 0) - (inp.down('KeyD') ? 1 : 0),
       hand: inp.down('Space'),
+      up: inp.down('Space'),
+      down: inp.down('ShiftLeft') || inp.down('ShiftRight'),
     };
   }
 
@@ -167,6 +174,7 @@ export class Vehicle {
   drive(dt: number, ctl: DriveInput | null) {
     if (this.kind === 'jet') return this.fly(dt, ctl);
     if (this.kind === 'balloon') return this.floatBalloon(dt, ctl);
+    if (this.kind === 'heli') return this.hover(dt, ctl);
     const s = this.spec;
     const thr = ctl?.thr ?? 0;
     const st = ctl?.st ?? 0;
@@ -238,6 +246,11 @@ export class Vehicle {
       wantYaw = Math.atan2(_v.x, _v.z);
       wantPitch = clamp(Math.asin(clamp(_v.y, -1, 1)) + 0.22, -0.9, 0.9);
     }
+    // 空域の端に来たら、自動で引き返す
+    if (Math.abs(this.pos.x) > 1080 || Math.abs(this.pos.z) > 1080) {
+      wantYaw = Math.atan2(-this.pos.x, -this.pos.z);
+      if (piloted && Math.random() < dt) g.hud.toast('空域の端です。引き返します', 'info', 1.5);
+    }
     let dy = wantYaw - this.yaw;
     while (dy > Math.PI) dy -= Math.PI * 2;
     while (dy < -Math.PI) dy += Math.PI * 2;
@@ -270,6 +283,61 @@ export class Vehicle {
     }
     this.pos.copy(next);
     this.roll += (clamp(-yawRate * 0.9, -1.2, 1.2) - this.roll) * damp(4, dt);
+    this.body.setNextKinematicTranslation({ x: this.pos.x, y: this.pos.y, z: this.pos.z });
+    this.body.setNextKinematicRotation(quatY(this.yaw));
+    if (this.driver === 'player') this.playerT = 0;
+    else this.playerT += dt;
+    this.damageEffects(dt);
+  }
+
+  /** ヘリ。マウスの向きを向き、W/S 前後・A/D 横移動・Space 上昇・Shift 下降 */
+  private hv = new THREE.Vector3();
+  private hover(dt: number, ctl: DriveInput | null) {
+    const g = this.game;
+    const piloted = this.driver === 'player' && !!ctl;
+    if (piloted) {
+      g.camera.getWorldDirection(_v);
+      let dy = Math.atan2(_v.x, _v.z) - this.yaw;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      this.yaw += clamp(dy * 3, -1.8, 1.8) * dt;
+    }
+    const f = ctl?.thr ?? 0;
+    const s = ctl?.st ?? 0;
+    const fx = Math.sin(this.yaw);
+    const fz = Math.cos(this.yaw);
+    const gy = g.world.groundHeight(this.pos.x, this.pos.z);
+    const flying = this.pos.y > gy + 0.3;
+    const tvx = flying || piloted ? fx * f * 34 - fz * s * 18 : 0;
+    const tvz = flying || piloted ? fz * f * 34 + fx * s * 18 : 0;
+    const tvy = piloted ? (ctl?.up ? 10 : ctl?.down ? -10 : 0) : -4;
+    this.hv.x += (tvx - this.hv.x) * damp(1.6, dt);
+    this.hv.z += (tvz - this.hv.z) * damp(1.6, dt);
+    this.vy += (tvy - this.vy) * damp(2.5, dt);
+    if (!flying && this.vy <= 0) this.hv.multiplyScalar(Math.max(0, 1 - dt * 4));
+    const step = new THREE.Vector3(this.hv.x, 0, this.hv.z).multiplyScalar(dt);
+    if (step.lengthSq() > 1e-6) {
+      const hit = g.physics.raycast(this.pos.clone().setY(this.pos.y + 1.5), step.clone().normalize(), step.length() + 3, G.STATIC, this.collider);
+      if (hit && Math.abs(hit.normal.y) < 0.7) {
+        if (this.hv.length() > 26) return this.crashJet();
+        this.hv.set(0, 0, 0);
+        step.set(0, 0, 0);
+      }
+    }
+    const next = this.pos.clone().add(step);
+    next.x = clamp(next.x, -1150, 1150);
+    next.z = clamp(next.z, -1150, 1150);
+    next.y = Math.min(420, next.y + this.vy * dt);
+    const gy2 = g.world.groundHeight(next.x, next.z);
+    if (next.y < gy2) {
+      if (this.vy < -16) return this.crashJet();
+      next.y = gy2;
+      this.vy = Math.max(0, this.vy);
+    }
+    this.pos.copy(next);
+    this.speed = Math.hypot(this.hv.x, this.hv.z);
+    this.pitch = -clamp((this.hv.x * fx + this.hv.z * fz) / 34, -1, 1) * 0.25;
+    this.roll = clamp((this.hv.x * -fz + this.hv.z * fx) / 18, -1, 1) * 0.3;
     this.body.setNextKinematicTranslation({ x: this.pos.x, y: this.pos.y, z: this.pos.z });
     this.body.setNextKinematicRotation(quatY(this.yaw));
     if (this.driver === 'player') this.playerT = 0;
@@ -435,7 +503,7 @@ export class Vehicle {
         this.burnT = -1;
         this.hp = 100;
         g.explode(this.pos.clone().setY(this.pos.y + 0.6), this.playerT < 15, this.kind === 'tank' ? 1.8 : 1);
-        if (this.kind === 'tank') this.blast(new THREE.Vector3(0, 3, 0));
+        if (this.kind === 'tank' || this.kind === 'jet' || this.kind === 'heli') this.blast(new THREE.Vector3(0, 3, 0));
       }
     }
   }
@@ -452,10 +520,11 @@ export class Vehicle {
     const r = this.model.root;
     r.position.copy(this.pos);
     r.rotation.y = this.yaw;
-    if (this.kind === 'jet') {
+    if (this.kind === 'jet' || this.kind === 'heli') {
       r.rotation.x = -this.pitch;
       r.rotation.z = this.roll;
     }
+    if (this.model.rotor) this.model.rotor.rotation.y += dt * (this.driver === 'player' || this.pos.y > this.game.world.groundHeight(this.pos.x, this.pos.z) + 0.3 ? 32 : 0);
     this.model.animate(this.speed, this.steer, dt, this.lean);
   }
 
@@ -484,6 +553,7 @@ export class Vehicle {
     this.wrecked = true;
     if (!this.charred) {
       this.charred = true;
+      this.game.thrills.event('vehicle');
       this.model.root.traverse((o) => {
         const m = o as THREE.Mesh;
         if (m.isMesh && (m.material as THREE.MeshStandardMaterial).color) {

@@ -192,6 +192,7 @@ export class Destruction {
     o.alive = false;
     this.onDestroyed?.(o);
     const isBld = o.kind === 'house' || o.kind === 'building' || o.kind === 'tower';
+    if (byPlayer && o.kind === 'tower') g.thrills.event('tower', 1);
     if (byPlayer && isBld) {
       this.wreckN++;
       this.wreckPos.set(o.x, o.y, o.z);

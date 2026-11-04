@@ -6,6 +6,8 @@ import type { World } from './World';
 
 /** 拡張したマップの端（見えない壁）。元の町は ±300m */
 export const EDGE = 640;
+/** さらに広げた世界の端（約2.4km 四方） */
+export const WORLD = 1200;
 /** ここより北が山岳地帯 */
 const MT_Z = -310;
 
@@ -52,14 +54,15 @@ export function buildOutskirts(w: World) {
 
   // ---------- 北: 山岳地帯 ----------
   const W = EDGE * 2;
-  const D = EDGE + MT_Z;
-  const nx = 256;
-  const nz = 66;
+  const MW = WORLD * 2;
+  const D = WORLD + MT_Z;
+  const nx = 400;
+  const nz = 148;
   const heights = new Float32Array((nx + 1) * (nz + 1));
-  for (let j = 0; j <= nx; j++) for (let i = 0; i <= nz; i++) heights[j * (nz + 1) + i] = terrainHeight(-EDGE + (j / nx) * W, -EDGE + (i / nz) * D);
-  const zc = -EDGE + D / 2;
-  w.physics.world.createCollider(RAPIER.ColliderDesc.heightfield(nz, nx, heights, { x: W, y: 1, z: D }).setTranslation(0, 0, zc).setCollisionGroups(groups(G.STATIC, G.ALL)), w.physics.staticBody);
-  const geo = new THREE.PlaneGeometry(W, D, nx, nz).rotateX(-Math.PI / 2).translate(0, 0, zc);
+  for (let j = 0; j <= nx; j++) for (let i = 0; i <= nz; i++) heights[j * (nz + 1) + i] = terrainHeight(-WORLD + (j / nx) * MW, -WORLD + (i / nz) * D);
+  const zc = -WORLD + D / 2;
+  w.physics.world.createCollider(RAPIER.ColliderDesc.heightfield(nz, nx, heights, { x: MW, y: 1, z: D }).setTranslation(0, 0, zc).setCollisionGroups(groups(G.STATIC, G.ALL)), w.physics.staticBody);
+  const geo = new THREE.PlaneGeometry(MW, D, nx, nz).rotateX(-Math.PI / 2).translate(0, 0, zc);
   const pos = geo.getAttribute('position') as THREE.BufferAttribute;
   const cols: number[] = [];
   const grass = new THREE.Color('#6f9c4c');
@@ -81,9 +84,9 @@ export function buildOutskirts(w: World) {
   const terrain = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }));
   terrain.receiveShadow = true;
   b.extras.add(terrain);
-  for (let k = 0; k < 170; k++) {
-    const x = rng.range(-EDGE + 10, EDGE - 10);
-    const z = rng.range(-EDGE + 10, MT_Z - 15);
+  for (let k = 0; k < 420; k++) {
+    const x = rng.range(-WORLD + 10, WORLD - 10);
+    const z = rng.range(-WORLD + 10, MT_Z - 15);
     if (flatness(x, z) > 0.15) continue;
     b.tree(x, z, terrainHeight(x, z) - 0.3, rng.range(1.1, 1.8), 'pine');
   }
@@ -193,8 +196,8 @@ export function buildOutskirts(w: World) {
 
 /** 地図に外側のエリアを描く（1px = 1m、tx は座標→ピクセル） */
 export function drawOutskirts(ctx: CanvasRenderingContext2D, tx: (v: number) => number) {
-  for (let x = -EDGE; x < EDGE; x += 8) {
-    for (let z = -EDGE; z < MT_Z; z += 8) {
+  for (let x = -WORLD; x < WORLD; x += 8) {
+    for (let z = -WORLD; z < MT_Z; z += 8) {
       const h = terrainHeight(x + 4, z + 4);
       ctx.fillStyle = h < 2 ? '#8f8c80' : h < 30 ? '#7fa75c' : h < 80 ? '#9a9586' : '#e6e9ec';
       ctx.fillRect(tx(x), tx(z), 8, 8);

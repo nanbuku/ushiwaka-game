@@ -21,10 +21,16 @@ const DENSITY: Record<District, number> = {
   airport: 0,
   highrise: 0,
   lake: 0,
+  desert: 0,
+  ocean: 0,
+  snow: 0,
 };
 
 const MIX: Record<District, Partial<Record<HumanKind, number>>> = {
   mountain: { man: 1 },
+  desert: { man: 1 },
+  ocean: { man: 1 },
+  snow: { man: 1 },
   airport: { man: 1, woman: 1, office: 1 },
   highrise: { office: 1 },
   lake: { man: 1, woman: 1, elderly: 1 },

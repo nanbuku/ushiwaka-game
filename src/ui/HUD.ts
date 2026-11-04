@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { drawOutskirts } from '../world/Outskirts';
+import { drawFrontier } from '../world/Frontier';
 import { FORCE_NAME } from '../gameplay/Responders';
 import type { Game } from '../core/Game';
 import { DISTRICT_LABEL, HALF } from '../world/Layout';
@@ -12,7 +13,7 @@ interface Pop {
 }
 
 /** 地図の画像は 1px = 1m。拡張したマップ（±640m）が入る大きさ */
-const OFF = 680;
+const OFF = 1240;
 const MAP_SIZE = OFF * 2;
 const MAP_SCALE = 1;
 /** 大きい地図（720px）への縮小率 */
@@ -28,6 +29,8 @@ export class HUD {
   private evilValue!: HTMLSpanElement;
   private hpFill!: HTMLDivElement;
   private storyEl!: HTMLDivElement;
+  private helpEl!: HTMLDivElement;
+  private helpT = 0;
   private heatLabel!: HTMLSpanElement;
   private armorFill!: HTMLDivElement;
   private clock!: HTMLDivElement;
@@ -92,6 +95,7 @@ export class HUD {
     this.evilValue = q('.ev');
     this.hpFill = q('.bar.hp > div');
     this.storyEl = q('.panel.story');
+    this.helpEl = q('.help');
     this.heatLabel = q('.heat-label') as unknown as HTMLSpanElement;
     this.armorFill = q('.bar.armor > div');
     this.clock = q('.clock');
@@ -234,6 +238,7 @@ export class HUD {
     ctx.fillStyle = '#6f9a4e';
     ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
     drawOutskirts(ctx, tx);
+    drawFrontier(ctx, tx);
     const col: Record<string, string> = {
       town: '#e9dfc9',
       city: '#c9ccd2',
@@ -268,7 +273,7 @@ export class HUD {
     const bt = (x: number) => (x + OFF) * BIG;
     b.font = 'bold 15px "M PLUS Rounded 1c", sans-serif';
     b.textAlign = 'center';
-    const spots: [number, number][] = [[0, -500], [0, 470], [470, 0], [-475, 0]];
+    const spots: [number, number][] = [[0, -500], [0, 470], [470, 0], [-475, 0], [-920, 400], [920, 300], [0, -950]];
     for (let r = 0; r < 3; r++) for (let k = 0; k < 3; k++) spots.push([-200 + k * 200, -200 + r * 200]);
     b.font = 'bold 12px "M PLUS Rounded 1c", sans-serif';
     for (const [x, z] of spots)
@@ -477,9 +482,16 @@ export class HUD {
     }
     // 武器
     const wh = g.weapons.hud;
-    const wt = `<div class="w-cur">${wh.name} <span>${wh.ammo === '∞' ? '' : '×' + wh.ammo}</span></div>` + `<div class="w-list">${wh.owned.map((o) => `<span class="${o.id === wh.current ? 'on' : ''}">${o.key} ${o.name}${o.ammo === '∞' ? '' : ' ' + o.ammo}</span>`).join('')}</div>` + (wh.note ? `<div class="w-c4">${wh.note}</div>` : '');
+    // 武器は全部持っているので、いま選んでいる武器のまわりだけ出す
+    const ci = wh.owned.findIndex((o) => o.id === wh.current);
+    const near = wh.owned.filter((_, i) => Math.abs(i - ci) <= 2 || Math.abs(i - ci) >= wh.owned.length - 2);
+    const wt = `<div class="w-cur">${wh.name}</div>` + `<div class="w-list">${near.map((o) => `<span class="${o.id === wh.current ? 'on' : ''}">${o.key} ${o.name}</span>`).join('')}</div>` + (wh.note ? `<div class="w-c4">${wh.note}</div>` : '');
+    this.weaponsEl.style.display = g.player.driving ? 'none' : '';
+    // 操作説明は遊び始めの1分だけ（武器の欄と重ならないように）
+    if (g.started) this.helpT += dt;
+    if (this.helpEl) this.helpEl.style.display = g.player.driving || this.helpT > 60 ? 'none' : '';
     if (this.weaponsEl.innerHTML !== wt) this.weaponsEl.innerHTML = wt;
-    this.crosshair.classList.toggle('hidden', !(wh.aim && !g.player.driving) && g.player.driving?.kind !== 'tank' && g.player.driving?.kind !== 'jet');
+    this.crosshair.classList.toggle('hidden', !(wh.aim && !g.player.driving) && g.player.driving?.kind !== 'tank' && g.player.driving?.kind !== 'jet' && g.player.driving?.kind !== 'heli');
     // 速度計
     const dv = g.player.driving;
     this.speedo.classList.toggle('hidden', !dv);

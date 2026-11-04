@@ -21,7 +21,8 @@ export type VehicleKind =
   | 'bicycle'
   | 'tank'
   | 'jet'
-  | 'balloon';
+  | 'balloon'
+  | 'heli';
 
 export interface VehicleSpec {
   halfW: number;
@@ -79,6 +80,7 @@ export const SPECS: Record<VehicleKind, VehicleSpec> = {
   motorbike: base({ name: 'バイク', halfW: 0.36, halfL: 1.05, height: 1.2, maxSpeed: 41, accel: 17, brake: 18, grip: 16, steerMax: 0.6, reverseMax: 3, wheelR: 0.32, seat: [0, 0.78, -0.2], bike: true }),
   tank: base({ name: '戦車', halfW: 1.7, halfL: 3.3, height: 2.3, maxSpeed: 17, accel: 5.5, brake: 12, grip: 30, steerMax: 0.9, reverseMax: 7, wheelR: 0.42, seat: [0, 2.05, -0.55] }),
   jet: base({ name: '戦闘機', halfW: 1.5, halfL: 5.8, height: 2.4, maxSpeed: 95, accel: 20, brake: 16, grip: 30, steerMax: 0.6, reverseMax: 0, wheelR: 0.35, seat: [0, 1.55, 1.6] }),
+  heli: base({ name: '攻撃ヘリ', halfW: 1.3, halfL: 3.2, height: 2.8, maxSpeed: 34, accel: 10, brake: 10, grip: 30, steerMax: 0.6, reverseMax: 10, wheelR: 0.2, seat: [0, 1.45, 1.3] }),
   balloon: base({ name: '気球', halfW: 1.0, halfL: 1.0, height: 1.2, maxSpeed: 8, accel: 2, brake: 3, grip: 10, steerMax: 0.5, reverseMax: 0, wheelR: 0.2, seat: [0, 0.55, 0] }),
   bicycle: base({ name: '自転車', halfW: 0.28, halfL: 0.85, height: 1.1, maxSpeed: 11, accel: 4.5, brake: 10, grip: 11, steerMax: 0.7, reverseMax: 2, wheelR: 0.33, seat: [0, 0.72, -0.2], bike: true }),
 };
@@ -129,6 +131,8 @@ export class VehicleModel {
   muzzle: THREE.Object3D | null = null;
   /** 気球のバーナーの炎 */
   flame: THREE.Mesh | null = null;
+  /** ヘリの回転翼 */
+  rotor: THREE.Group | null = null;
   color: string;
   spec: VehicleSpec;
 
@@ -147,10 +151,11 @@ export class VehicleModel {
       this.buildTank();
       return;
     }
-    if (kind === 'jet' || kind === 'balloon') {
-      this.color = kind === 'jet' ? '#7d8794' : '#e63946';
+    if (kind === 'jet' || kind === 'balloon' || kind === 'heli') {
+      this.color = kind === 'jet' ? '#7d8794' : kind === 'heli' ? (colorSeed < 0.5 ? '#46553f' : '#2b2d33') : '#e63946';
       this.root.rotation.order = 'YXZ';
       if (kind === 'jet') this.buildJet();
+      else if (kind === 'heli') this.buildHeli();
       else this.buildBalloon();
       this.seat.position.set(...s.seat);
       this.body.add(this.seat);
@@ -300,6 +305,36 @@ export class VehicleModel {
       add(new THREE.BoxGeometry(2.2, 0.08, 1.2), gray, sx * 1.4, 1.3, -4);
     }
     for (const [x, z] of [[0, 3.5], [-1.4, -0.5], [1.4, -0.5]]) add(new THREE.CylinderGeometry(0.06, 0.06, 0.8, 6), dark, x, 0.45, z);
+  }
+
+  /** 攻撃ヘリ（前はローカル +z） */
+  private buildHeli() {
+    const body = colorMat(this.color, 0.5);
+    const dark = colorMat('#1f2227', 0.5);
+    const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = this.body) => {
+      const mesh = new THREE.Mesh(geo, m);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      parent.add(mesh);
+      return mesh;
+    };
+    add(new THREE.SphereGeometry(1, 18, 12).scale(1.2, 1.15, 2.6), body, 0, 1.6, 0.3);
+    add(new THREE.SphereGeometry(1, 14, 10).scale(0.9, 0.75, 1.1), glassMat, 0, 1.95, 1.9);
+    add(new THREE.CylinderGeometry(0.28, 0.15, 5.4, 10).rotateX(Math.PI / 2), body, 0, 1.9, -3.7);
+    add(new THREE.BoxGeometry(0.1, 1.4, 0.9), body, 0, 2.5, -6.2);
+    add(new THREE.BoxGeometry(0.06, 1.7, 0.2), dark, 0.22, 2.5, -6.3);
+    for (const sx of [-1, 1]) {
+      add(new THREE.CylinderGeometry(0.06, 0.06, 4, 8).rotateX(Math.PI / 2), dark, sx * 1.0, 0.12, 0.3);
+      for (const z of [-0.9, 1.3]) add(new THREE.BoxGeometry(0.07, 0.7, 0.07), dark, sx * 0.9, 0.45, z);
+      add(new THREE.CylinderGeometry(0.22, 0.22, 1.7, 10).rotateX(Math.PI / 2), dark, sx * 1.55, 1.2, 0.6);
+      add(new THREE.BoxGeometry(1.2, 0.08, 0.5), body, sx * 1.0, 1.35, 0.6);
+    }
+    const rotor = new THREE.Group();
+    rotor.position.set(0, 3.0, 0.2);
+    add(new THREE.CylinderGeometry(0.18, 0.18, 0.4, 10), dark, 0, 0, 0, rotor);
+    for (const r of [0, Math.PI / 2]) add(new THREE.BoxGeometry(11, 0.05, 0.32), dark, 0, 0.15, 0, rotor).rotation.y = r;
+    this.body.add(rotor);
+    this.rotor = rotor;
   }
 
   /** 熱気球 */

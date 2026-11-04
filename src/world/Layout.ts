@@ -27,7 +27,10 @@ export type District =
   | 'mountain'
   | 'airport'
   | 'highrise'
-  | 'lake';
+  | 'lake'
+  | 'desert'
+  | 'ocean'
+  | 'snow';
 
 export const DISTRICT_GRID: District[][] = [
   ['countryHill', 'park', 'amusement'],
@@ -49,10 +52,16 @@ export const DISTRICT_LABEL: Record<District, string> = {
   airport: 'ひだまり空港・港',
   highrise: '超高層ビル街',
   lake: '湖とゴルフ場',
+  desert: '砂漠・西部演習場',
+  ocean: '海・島・空母',
+  snow: '雪山',
 };
 
 export function districtAt(x: number, z: number): District {
   // 町の外側（拡張したエリア）
+  if (x < -640 && z > -300) return 'desert';
+  if ((x > 640 && z > -300) || z > 640) return 'ocean';
+  if (z < -640) return 'snow';
   if (Math.abs(x) > HALF || Math.abs(z) > HALF) return z < -HALF ? 'mountain' : z > HALF ? 'airport' : x > 0 ? 'highrise' : 'lake';
   const c = Math.max(0, Math.min(2, Math.floor((x + HALF) / 200)));
   const r = Math.max(0, Math.min(2, Math.floor((z + HALF) / 200)));

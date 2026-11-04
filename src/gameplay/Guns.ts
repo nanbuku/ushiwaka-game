@@ -122,6 +122,7 @@ export function playerShotHit(g: Game, hit: ShotHit, dmg: number, from: THREE.Ve
     return;
   }
   if (hit.collider && g.story.onShot(hit.collider.handle, dmg)) return;
+  if (hit.collider && g.airforce.onShot(hit.collider.handle, dmg)) return;
   if (hit.collider) {
     const o = g.destruction.byCollider(hit.collider.handle);
     if (o) g.destruction.damage(o, dmg * 0.3, from, true, true);
@@ -139,10 +140,11 @@ const FUSE = 10;
 export class Nukes {
   device: { mesh: THREE.Group; light: THREE.Mesh; pos: THREE.Vector3; t: number; beep: number } | null = null;
   cooldown = 0;
-  private blast: {
+  private blasts: {
     pos: THREE.Vector3;
     t: number;
     r: number;
+    scale: number;
     hitPlayer: boolean;
     kills: number;
     wrecks: number;
@@ -151,10 +153,10 @@ export class Nukes {
     stem: THREE.Mesh;
     cap: THREE.Mesh;
     ring: THREE.Mesh;
-  } | null = null;
+  }[] = [];
   private flash: HTMLDivElement;
   private flashA = 0;
-  private scorch: THREE.Mesh | null = null;
+  private scorches: THREE.Mesh[] = [];
 
   constructor(private game: Game) {
     this.flash = document.createElement('div');
@@ -163,13 +165,13 @@ export class Nukes {
   }
 
   get active() {
-    return !!this.device || !!this.blast;
+    return !!this.device;
   }
 
   /** 足元に置く */
   place(pos: THREE.Vector3) {
     const g = this.game;
-    if (this.active || this.cooldown > 0) {
+    if (this.device || this.cooldown > 0) {
       g.hud.toast(this.cooldown > 0 ? `核爆弾はまだ準備中（あと${Math.ceil(this.cooldown)}秒）` : '核爆弾はもう仕掛けてある！', 'info', 2);
       return false;
     }
@@ -216,22 +218,24 @@ export class Nukes {
       if (d.t <= 0) {
         g.scene.remove(d.mesh);
         this.device = null;
-        this.detonate(d.pos);
+        this.cooldown = 6;
+        this.detonate(d.pos, 1);
       }
     }
-    if (this.blast) this.updateBlast(dt);
+    for (const b of [...this.blasts]) this.updateBlast(b, dt);
   }
 
-  private detonate(pos: THREE.Vector3) {
+  /** 核爆発（scale 1 = 核爆弾、0.75 = 戦闘機の少核弾頭） */
+  detonate(pos: THREE.Vector3, scale = 1) {
     const g = this.game;
-    this.flashA = 1.6;
+    const near = g.camera.position.distanceTo(pos);
+    this.flashA = Math.max(this.flashA, Math.max(0.35, 1.6 * scale - near / 900));
     const gy = g.world.groundHeight(pos.x, pos.z);
     const group = new THREE.Group();
     group.position.set(pos.x, gy, pos.z);
+    group.scale.setScalar(scale);
     const fireMat = new THREE.MeshBasicMaterial({ color: '#fff6d0', transparent: true, opacity: 1, depthWrite: false, fog: false });
     const fireball = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 18), fireMat);
-    fireball.scale.setScalar(1);
-    // きのこ雲（でこぼこにした球と、柱）
     const capGeo = new THREE.IcosahedronGeometry(1, 3);
     const cp = capGeo.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < cp.count; i++) {
@@ -248,32 +252,30 @@ export class Nukes {
     ring.position.y = 1.5;
     group.add(fireball, cap, stem, ring);
     g.scene.add(group);
-    this.blast = { pos: pos.clone().setY(gy), t: 0, r: 0, hitPlayer: false, kills: 0, wrecks: 0, group, fireball, stem, cap, ring };
-    // 焦げあと
-    if (!this.scorch) {
-      this.scorch = new THREE.Mesh(new THREE.CircleGeometry(1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#17120f', transparent: true, opacity: 0.72, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
-      g.scene.add(this.scorch);
-    }
-    this.scorch.position.set(pos.x, gy + 0.09, pos.z);
-    this.scorch.scale.setScalar(70);
-    g.audio.play('nuke', pos, 1);
-    g.story.onNuke(pos);
-    g.camRig.addShake(2.5);
-    g.fx.explosion(pos.clone().setY(gy + 1), gy, 4);
-    g.heat.value = 5.99;
+    this.blasts.push({ pos: pos.clone().setY(gy), t: 0, r: 0, scale, hitPlayer: false, kills: 0, wrecks: 0, group, fireball, stem, cap, ring });
+    const sc = new THREE.Mesh(new THREE.CircleGeometry(1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#17120f', transparent: true, opacity: 0.72, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+    sc.position.set(pos.x, gy + 0.09, pos.z);
+    sc.scale.setScalar(70 * scale);
+    g.scene.add(sc);
+    this.scorches.push(sc);
+    if (this.scorches.length > 8) g.scene.remove(this.scorches.shift()!);
+    g.audio.play('nuke', pos, 1, scale < 1 ? 1.15 : 1);
+    g.story.onNuke(pos, scale);
+    g.camRig.addShake(2.5 * scale);
+    g.fx.explosion(pos.clone().setY(gy + 1), gy, 4 * scale);
+    g.heat.value = Math.max(g.heat.value, 5.5);
+    g.thrills.event('nuke', 1);
+    if (near < 900) g.thrills.slowmo(1.6 * scale, 0.3);
   }
 
-  private updateBlast(dt: number) {
+  private updateBlast(b: Nukes['blasts'][number], dt: number) {
     const g = this.game;
-    const b = this.blast!;
     b.t += dt;
     const t = b.t;
-    // 衝撃波が広がる
+    const R = NUKE_R * b.scale;
     const prevR = b.r;
-    b.r = NUKE_R * Math.min(1, Math.pow(t / NUKE_TIME, 0.6));
-    const r = b.r;
-    if (r > prevR) this.sweep(b.pos, r);
-    // 見た目
+    b.r = R * Math.min(1, Math.pow(t / NUKE_TIME, 0.6));
+    if (b.r > prevR) this.sweep(b, b.r);
     const fb = clamp(t / 1.1, 0, 1);
     b.fireball.scale.setScalar(4 + 36 * (1 - Math.pow(1 - fb, 3)));
     b.fireball.position.y = 10 + Math.max(0, t - 1) * 9;
@@ -291,16 +293,16 @@ export class Nukes {
     const sm = b.cap.material as THREE.MeshStandardMaterial;
     sm.emissiveIntensity = Math.max(0, 2.2 - t * 0.28);
     sm.opacity = clamp(1 - (t - 22) / 8, 0, 1);
-    b.ring.scale.set(r, 1, r);
+    b.ring.scale.set(b.r / b.scale, 1, b.r / b.scale);
     (b.ring.material as THREE.MeshBasicMaterial).opacity = clamp(0.85 * (1 - t / (NUKE_TIME + 1.5)), 0, 0.85);
     if (t < 9 && Math.random() < dt * 30) {
       const a = rand.range(0, Math.PI * 2);
-      const rr = rand.range(0, capS);
-      g.fx.smoke(new THREE.Vector3(b.pos.x + Math.cos(a) * rr, b.pos.y + capY + rand.range(-capS * 0.3, capS * 0.3), b.pos.z + Math.sin(a) * rr), true);
+      const rr = rand.range(0, capS) * b.scale;
+      g.fx.smoke(new THREE.Vector3(b.pos.x + Math.cos(a) * rr, b.pos.y + capY * b.scale + rand.range(-capS * 0.3, capS * 0.3) * b.scale, b.pos.z + Math.sin(a) * rr), true);
     }
     if (t < NUKE_TIME + 0.2 && Math.random() < dt * 40) {
       const a = rand.range(0, Math.PI * 2);
-      g.fx.smoke(new THREE.Vector3(b.pos.x + Math.cos(a) * r, b.pos.y + 1, b.pos.z + Math.sin(a) * r), false);
+      g.fx.smoke(new THREE.Vector3(b.pos.x + Math.cos(a) * b.r, b.pos.y + 1, b.pos.z + Math.sin(a) * b.r), false);
     }
     if (t > NUKE_TIME) b.hitPlayer = true;
     if (t > NUKE_TIME + 0.05 && (b.kills > 0 || b.wrecks > 0)) {
@@ -316,15 +318,15 @@ export class Nukes {
         const m = o as THREE.Mesh;
         if (m.isMesh) m.geometry.dispose();
       });
-      this.blast = null;
-      this.cooldown = 8;
+      this.blasts.splice(this.blasts.indexOf(b), 1);
     }
   }
 
   /** 衝撃波が半径 r まで届いた：その中の物をまとめて壊す */
-  private sweep(pos: THREE.Vector3, r: number) {
+  private sweep(b: Nukes['blasts'][number], r: number) {
     const g = this.game;
-    const b = this.blast!;
+    const pos = b.pos;
+    const R = NUKE_R * b.scale;
     for (const o of g.destruction.near(pos.x, pos.z, r)) {
       const isBld = o.kind === 'house' || o.kind === 'building' || o.kind === 'tower';
       if (isBld) b.wrecks++;
@@ -335,29 +337,30 @@ export class Nukes {
       const d = Math.hypot(n.pos.x - pos.x, n.pos.z - pos.z);
       if (d > r) continue;
       const dir = n.pos.clone().sub(pos).setY(0).normalize();
-      const k = 1 - d / NUKE_R;
+      const k = 1 - d / R;
       n.fling(dir.multiplyScalar(10 + 26 * k).setY(4 + 14 * k));
-      if (d < NUKE_R * 0.75) n.char();
+      if (d < R * 0.75) n.char();
       b.kills++;
     }
     for (const v of g.traffic.list) {
       if (v.charred) continue;
-      const d = Math.hypot(v.pos.x - pos.x, v.pos.z - pos.z);
+      const d = v.pos.distanceTo(pos);
       if (d > r) continue;
       if (v === g.player.driving) g.player.exitVehicle();
       const dir = v.pos.clone().sub(pos).setY(0).normalize();
-      const k = 1 - d / NUKE_R;
+      const k = 1 - d / R;
       v.blast(dir.multiplyScalar(6 + 22 * k).setY(5 + 12 * k));
     }
+    g.airforce.sweep(pos, r);
     const p = g.player;
-    const dp = Math.hypot(p.pos.x - pos.x, p.pos.z - pos.z);
+    const dp = p.pos.distanceTo(pos);
     if (!b.hitPlayer && dp <= r) {
       b.hitPlayer = true;
       g.audio.play('boom', undefined, 1, 0.45);
-      g.camRig.addShake(2.2);
-      if (dp < 110) {
+      g.camRig.addShake(2.2 * b.scale);
+      if (dp < 110 * b.scale) {
         if (p.driving) p.exitVehicle();
-        p.hurt(dp < 40 ? 9999 : 95 * (1 - (dp - 40) / 70), pos);
+        p.hurt(dp < 40 * b.scale ? 9999 : 95 * (1 - (dp - 40 * b.scale) / (70 * b.scale)), pos);
         p.vel.add(p.pos.clone().sub(pos).setY(0).normalize().multiplyScalar(14).setY(9));
       }
     }

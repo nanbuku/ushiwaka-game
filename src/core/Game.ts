@@ -22,6 +22,12 @@ import { Destruction } from '../world/Destruction';
 import { Responders } from '../gameplay/Responders';
 import { Story } from '../gameplay/Story';
 import { Skyships } from '../world/Skyships';
+import { AirForce } from '../gameplay/AirForce';
+import { Thrills } from '../gameplay/Thrills';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { AudioSys } from './Audio';
 import { EventBus } from './Events';
 import { Input } from './Input';
@@ -62,6 +68,11 @@ export class Game {
   police = new Responders(this);
   story = new Story(this);
   skyships!: Skyships;
+  airforce!: AirForce;
+  thrills = new Thrills(this);
+  /** 画面効果（光のにじみ）。P で切り替え */
+  fxOn = false;
+  private composer: EffectComposer | null = null;
   sky!: SkySystem;
   world!: World;
   fx!: Effects;
@@ -92,7 +103,7 @@ export class Game {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     container.appendChild(this.renderer.domElement);
-    this.camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.05, 2000);
+    this.camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 3400);
     this.input = new Input(this.renderer.domElement);
     this.hud = new HUD(this);
     window.addEventListener('resize', () => this.onResize());
@@ -123,6 +134,8 @@ export class Game {
     this.weapons.init();
     this.story.init();
     this.skyships = new Skyships(this);
+    this.airforce = new AirForce(this);
+    this.setupFx();
     this.dialogue = new Dialogue(this, document.body);
     this.hud.buildMap();
     this.player.teleport(this.world.spawn, this.world.spawnYaw);
@@ -183,6 +196,7 @@ export class Game {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.composer?.setSize(window.innerWidth, window.innerHeight);
   }
 
   get inputLocked() {
@@ -239,7 +253,7 @@ export class Game {
       const d = Math.hypot(v.pos.x - pos.x, v.pos.z - pos.z);
       if (d > R * 1.5) continue;
       // 戦車は爆風では飛ばない（装甲が削れるだけ）
-      if (v.kind === 'tank' && !v.charred) {
+      if ((v.kind === 'tank' || v.kind === 'jet' || v.kind === 'heli') && !v.charred) {
         v.hp -= 60 * scale * (1 - d / (R * 1.5));
         continue;
       }
@@ -264,6 +278,8 @@ export class Game {
     this.destruction.damageArea(pos, R * 1.4, 380 * scale, true, byPlayer);
     this.story.onExplosion(pos, R, scale, byPlayer);
     this.skyships.onExplosion(pos, R, scale, byPlayer);
+    this.airforce.onExplosion(pos, R, scale, byPlayer);
+    if (scale >= 1.6 && this.camera.position.distanceTo(pos) < 110) this.thrills.slowmo(0.7, 0.35);
     if (this.nanku.pos.distanceTo(pos) < 10) this.hud.popText(this.nanku.headPos(), this.karma.mode === 'devil' ? 'たーまやー！' : 'きゃあっ！', '#ff4d6d', 26);
     if (byPlayer) {
       this.karma.crime('bomb', pos);
@@ -278,7 +294,7 @@ export class Game {
     this.lastT = now;
     this.frame++;
     if (!this.paused && this.started && !this.manual) {
-      this.step(dt);
+      this.step(dt * this.thrills.timeScale);
     } else if (!this.started) {
       // タイトル画面ではゆっくりカメラを回す
       this.camRig.yaw += dt * 0.08;
@@ -288,8 +304,25 @@ export class Game {
     if (!this.manual) this.camRig.update(dt);
     this.audio.setListener(this.camera.position, this.camRig.yaw);
     this.hud.update(dt);
+    this.thrills.update(dt);
     this.input.endFrame();
-    this.renderer.render(this.scene, this.camera);
+    if (this.fxOn && this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
+  }
+
+  /** 光のにじみ（ブルーム）などの画面効果 */
+  private setupFx() {
+    const c = new EffectComposer(this.renderer);
+    c.addPass(new RenderPass(this.scene, this.camera));
+    c.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2), 0.5, 0.45, 0.9));
+    c.addPass(new OutputPass());
+    this.composer = c;
+    this.fxOn = !this.testMode;
+  }
+
+  setFx(on: boolean) {
+    this.fxOn = on;
+    this.hud.toast(on ? '画面効果: ON（P で切り替え）' : '画面効果: OFF（動作が軽くなります）', 'info', 2);
   }
 
   /** テスト用: 描画とは別に、ゲームの時間を一定の刻みで進める */
@@ -314,6 +347,7 @@ export class Game {
       this.police.update(dt);
       this.story.update(dt);
       this.skyships.update(dt);
+      this.airforce.update(dt);
       this.npcs.update(dt);
       this.traffic.update(dt);
       this.heat.update(dt);

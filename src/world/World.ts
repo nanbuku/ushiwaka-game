@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import { Rng } from '../core/Rng';
 import { WorldBuilder } from './Builder';
-import { buildOutskirts, EDGE, terrainHeight } from './Outskirts';
+import { buildOutskirts, EDGE, terrainHeight, WORLD } from './Outskirts';
+import { buildFrontier, desertHeight, islandHeight, isOcean, type Platform } from './Frontier';
+
+const OCEAN = { x: 0, z: 0, rx: 1e6, rz: 1e6, y: 0.05 };
 import { buildDistrictLot } from './districts';
 import { computeLots, computeRoads, districtAt, HALF, inRect, LINES, ROAD, type District, type Lot, type Rect, type RoadKind, type RoadSeg } from './Layout';
 import { NavGraph } from './Navigation';
@@ -36,6 +39,9 @@ const GROUND_COLOR: Record<District, string> = {
   airport: '#a9aba5',
   highrise: '#b9b8b2',
   lake: '#86b35e',
+  desert: '#e3cf9b',
+  ocean: '#2f74ad',
+  snow: '#76a052',
 };
 
 /** 街全体（地面・道路・建物・経路グラフ）を作って保持する */
@@ -63,6 +69,8 @@ export class World {
   zones: { name: string; rect: Rect }[] = [];
   /** ストーリーで使う場所（グレイハートタワーの前庭、河川敷の工場の中庭など） */
   landmarks: Record<string, THREE.Vector3> = {};
+  /** 空母の甲板・坂など、高さの決まった場所 */
+  platforms: Platform[] = [];
 
   constructor(public game: Game) {}
 
@@ -88,6 +96,7 @@ export class World {
     }
     this.buildBorders();
     buildOutskirts(this);
+    buildFrontier(this);
     this.buildTrafficLights();
     if (this.wirePts.length) {
       const geo = new THREE.BufferGeometry();
@@ -114,13 +123,17 @@ export class World {
 
   /** 地面の高さ（歩道付き区画の上は 0.15） */
   groundHeight(x: number, z: number) {
+    for (const p of this.platforms) if (x >= p.x0 && x <= p.x1 && z >= p.z0 && z <= p.z1) return p.h0 + ((p.h1 - p.h0) * (x - p.x0)) / (p.x1 - p.x0);
     if (z < -305) return terrainHeight(x, z);
+    if (x < -EDGE) return desertHeight(x, z);
+    if (x > EDGE || z > EDGE) return islandHeight(x, z);
     const l = this.lotAt(x, z);
     if (l && l.raised && x >= l.x0 && x <= l.x1 && z >= l.z0 && z <= l.z1) return l.y;
     return 0;
   }
 
   waterAt(x: number, z: number) {
+    if ((Math.abs(x) > EDGE || z > 584) && isOcean(x, z)) return OCEAN;
     for (const w of this.waters) {
       const dx = (x - w.x) / w.rx;
       const dz = (z - w.z) / w.rz;
@@ -333,7 +346,7 @@ export class World {
     const b = this.b;
     const rng = this.rng;
     // 見えない壁
-    const W = EDGE + 2;
+    const W = WORLD + 2;
     this.game.physics.staticBox(0, 150, -W, W + 10, 300, 1);
     this.game.physics.staticBox(0, 150, W, W + 10, 300, 1);
     this.game.physics.staticBox(-W, 150, 0, 1, 300, W + 10);
@@ -341,9 +354,9 @@ export class World {
     // 遠景の山
     for (let i = 0; i < 46; i++) {
       const ang = (i / 46) * Math.PI * 2 + rng.range(-0.05, 0.05);
-      const r = rng.range(900, 1050);
-      const h = rng.range(140, 300);
-      const s = rng.range(300, 460);
+      const r = rng.range(1750, 1950);
+      const h = rng.range(220, 420);
+      const s = rng.range(420, 640);
       b.batch.add('cone', WorldBuilder.mat(Math.cos(ang) * r, -2, Math.sin(ang) * r, rng.range(0, 6), s, h, s), rng.pick(['#4f7a52', '#5b8459', '#46704c', '#6b8a64']));
     }
     void LINES;

@@ -77,11 +77,10 @@ const CHAPTERS: { title: string; steps: Step[] }[] = [
       { k: 'do', run: (g) => g.story.attachKuma() },
       { k: 'destroy', label: '街のドレインライトを壊す', what: 'drain', spots: (g) => [navSpot(g, 'park', 10, 10), navSpot(g, 'downtown', -10, -5), navSpot(g, 'civic', 15, -10), navSpot(g, 'amusement', -15, 15)], guards: 2 },
       { k: 'destroy', label: '捕まったぬいぐるみを助ける（おりを壊す）', what: 'cage', spots: (g) => [navSpot(g, 'countryField', 5, 5), navSpot(g, 'countryHill', -5, 10), navSpot(g, 'city', -20, 20)], guards: 1 },
-      { k: 'talk', who: 'くまきち', lines: ['助けた仲間が、拳銃とマシンガンの使い方を教えてくれたぜ。', '……ぬいぐるみが銃って、どういう世界だよ。'] },
+      { k: 'talk', who: 'くまきち', lines: ['助けた仲間が、銃の撃ち方を特訓してくれたぜ。', '……ぬいぐるみが銃って、どういう世界だよ。'] },
       { k: 'do', run: (g) => {
-        g.weapons.give('pistol', true);
-        g.weapons.give('smg', true);
-        g.story.reward('拳銃（4）とマシンガン（5）を手に入れた', 8);
+        g.weapons.power += 0.25;
+        g.story.reward('銃の威力が上がった（+25%）', 8);
       } },
     ],
   },
@@ -93,10 +92,10 @@ const CHAPTERS: { title: string; steps: Step[] }[] = [
       { k: 'destroy', label: 'グレイエンジンを壊す（爆弾・ミサイルが効く）', what: 'engine', spots: (g) => [factory(g).clone().add(new THREE.Vector3(-14, 0, 2)), factory(g).clone().add(new THREE.Vector3(0, 0, -2)), factory(g).clone().add(new THREE.Vector3(14, 0, 2))], guards: 2 },
       { k: 'talk', who: 'Dr.ネジマキ', lines: ['ギギギ……よくもワシのエンジンを！', '出でよ、ガラクタ戦車！ その白い犬をスクラップにしてしまえ！'] },
       { k: 'boss', label: 'ボス：ガラクタ戦車を倒す', boss: 'junkTank' },
-      { k: 'talk', who: 'くまきち', lines: ['やったな！ 工場の奥にある戦車は、もうおまえのもんだ。乗っていけ（F）！', 'それと、ネジマキの追尾ミサイルもいただいたぜ。'] },
+      { k: 'talk', who: 'くまきち', lines: ['やったな！ 工場の奥にある戦車は、もうおまえのもんだ。乗っていけ（F）！', 'それと、ネジマキの改造で、銃がもっと強くなったぜ。'] },
       { k: 'do', run: (g) => {
-        g.weapons.give('missile', true);
-        g.story.reward('追尾ミサイル（7）を手に入れた', 8);
+        g.weapons.power += 0.25;
+        g.story.reward('銃の威力がさらに上がった（+25%）', 8);
       } },
     ],
   },
@@ -504,9 +503,9 @@ export class Story {
     if (Math.hypot(pos.x - k.pos.x, pos.z - k.pos.z) - 4.5 < R + 2) k.damage(240 * scale);
   }
 
-  onNuke(pos: THREE.Vector3) {
+  onNuke(pos: THREE.Vector3, scale = 1) {
     const k = this.kaiju;
-    if (k && k.alive && Math.hypot(pos.x - k.pos.x, pos.z - k.pos.z) < 170) k.damage(6000);
+    if (k && k.alive && Math.hypot(pos.x - k.pos.x, pos.z - k.pos.z) < 170 * scale) k.damage(6000 * scale);
   }
 
   // ---------- ボス ----------
@@ -571,6 +570,8 @@ export class Story {
       if (!this.kaiju) return;
       this.kaiju.update(dt);
       if (this.kaiju.gone) {
+        g.thrills.event('boss', 1);
+        g.thrills.unlock('kaiju');
         const k = this.kaiju;
         const pl = makePlush('#8e8b93', 1.4);
         pl.position.copy(k.pos);
@@ -582,13 +583,19 @@ export class Story {
     if (id === 'junkTank') {
       const v = this.bossTank;
       if (!v) return;
-      if (v.charred) this.next();
+      if (v.charred) {
+        g.thrills.event('boss', 1);
+        this.next();
+      }
       else if (v.dead && factory(g).distanceTo(g.player.pos) < 90) this.spawnBoss(id);
       return;
     }
     const b = this.bossNpcs[0];
     if (!b) return;
-    if (!b.alive) this.next();
+    if (!b.alive) {
+      g.thrills.event('boss', 1);
+      this.next();
+    }
     else if (!g.npcs.list.includes(b) && tower(g).distanceTo(g.player.pos) < 90) this.spawnBoss(id);
   }
 

@@ -186,7 +186,7 @@ export const MAT = {
   lamp: new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xffd28a, emissiveIntensity: 0.0, roughness: 0.5 }),
   neon: new THREE.MeshStandardMaterial({ emissive: 0xffffff, emissiveIntensity: 0.3, roughness: 0.6 }),
   glass: new THREE.MeshStandardMaterial({ color: 0xa8d4f0, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.32 }),
-  water: new THREE.MeshStandardMaterial({ color: 0x4a90c8, roughness: 0.22, metalness: 0.0, transparent: true, opacity: 0.84 }),
+  water: new THREE.MeshStandardMaterial({ color: 0x4a90c8, roughness: 0.22, metalness: 0.0, transparent: true, opacity: 0.84, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }),
   office: facade('office'),
   house: facade('house'),
   shop: facade('shop'),

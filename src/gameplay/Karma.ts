@@ -64,7 +64,10 @@ export class Karma {
     const g = this.game;
     // グレイハート社の黒服は悪者：倒しても悪行にならない
     if (detail === 'agent') {
-      if (kind === 'kill') g.hud.toast('黒服を倒した！', 'good', 2);
+      if (kind === 'kill') {
+        g.hud.toast('黒服を倒した！', 'good', 2);
+        g.thrills.event('kill', count);
+      }
       return;
     }
     g.heat.report(kind, pos, ['catcher', 'police', 'swat', 'soldier'].includes(detail));
@@ -72,6 +75,9 @@ export class Karma {
     let pts = { bite: 3, kill: 12, steal: 2, shrine: 4, faint: 1, bomb: 5, wreck: 3, shoot: 3 }[kind] * count;
     if (kind === 'kill' && (detail === 'child' || detail === 'elderly')) pts += 4;
     this.evil += pts;
+    if (kind === 'kill') g.thrills.event('kill', count);
+    else if (kind === 'faint') g.thrills.event('faint', count);
+    else if (kind === 'wreck') g.thrills.event('wreck', count);
     if (this.mode === 'devil') this.devil = Math.min(100, this.devil + pts * 0.5);
     switch (kind) {
       case 'bite':

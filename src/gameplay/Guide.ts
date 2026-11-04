@@ -23,6 +23,9 @@ const CENTER: Record<District, [number, number]> = {
   airport: [0, 470],
   highrise: [470, 0],
   lake: [-475, 0],
+  desert: [-920, 400],
+  ocean: [920, 300],
+  snow: [0, -950],
 };
 
 /**

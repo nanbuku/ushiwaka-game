@@ -55,7 +55,7 @@ export class CameraRig {
       }
     }
     const tank = v?.kind === 'tank';
-    const air = v?.kind === 'jet' ? 2.6 : v?.kind === 'balloon' ? 2.9 : tank ? 1.7 : 1;
+    const air = v?.kind === 'jet' ? 2.6 : v?.kind === 'balloon' ? 2.9 : v?.kind === 'heli' ? 2.3 : tank ? 1.7 : 1;
     this.dist = lerp(this.dist, v ? this.carDist * air : this.targetDist, damp(6, dt));
     // 銃などで狙うときは肩ごしの視点（うしわかを左下に寄せ、画面の中央を照準にする）
     const aiming = !v && AIM_WEAPONS.includes(g.weapons.current) && !p.carrying;
