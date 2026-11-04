@@ -394,6 +394,9 @@ export class Arsenal {
       case 'missile': {
         this.cd = 0.8;
         const { dir } = this.aimRay();
+        // 足元の地面に撃ち込まないよう、ねらいが下を向きすぎていたら水平に近づける
+        dir.y = Math.max(dir.y, -0.06);
+        dir.normalize();
         const target = this.lockTarget();
         const mesh = weaponModel('missile');
         mesh.scale.setScalar(1.6);
@@ -686,9 +689,11 @@ export class Arsenal {
       if (hit) {
         g.scene.remove(pr.mesh);
         this.projectiles.splice(i, 1);
-        if (pr.kind === 'rocket') g.explode(pr.pos, true, 0.8);
-        else if (pr.kind === 'missile') g.explode(pr.pos, true, 1.7);
-        else if (pr.kind === 'shell') g.explode(pr.pos, true, 2.1);
+        // 撃ってすぐ（0.6秒以内）に目の前で当たった爆発では、うしわか自身は傷つかない
+        const spare = pr.t < 0.6;
+        if (pr.kind === 'rocket') g.explode(pr.pos, true, 0.8, spare);
+        else if (pr.kind === 'missile') g.explode(pr.pos, true, 1.7, spare);
+        else if (pr.kind === 'shell') g.explode(pr.pos, true, 2.1, spare);
         else if (pr.kind === 'mininuke') this.nukes.detonate(pr.pos.clone(), 0.75);
         else {
           g.audio.play('glass', pr.pos, 1);
@@ -789,7 +794,7 @@ export class Arsenal {
   private jetControl(dt: number, v: Vehicle) {
     const g = this.game;
     const inp = g.input;
-    if (!inp.active || g.dialogue.active || g.paused) return;
+    if (!inp.active || g.dialogue.busy || g.paused) return;
     const cp = Math.cos(v.pitch);
     const fwd = new THREE.Vector3(Math.sin(v.yaw) * cp, Math.sin(v.pitch), Math.cos(v.yaw) * cp);
     const nose = v.pos.clone().add(new THREE.Vector3(0, 1.3, 0)).addScaledVector(fwd, 7.5);
@@ -838,7 +843,7 @@ export class Arsenal {
     m.barrel.rotation.x += (pitchT - m.barrel.rotation.x) * damp(6, dt);
     m.barrel.position.z += (1.8 - m.barrel.position.z) * damp(5, dt);
     const inp = g.input;
-    if (!inp.active || g.dialogue.active || g.paused || !inp.mousePressed(0) || this.tankCd > 0) return;
+    if (!inp.active || g.dialogue.busy || g.paused || !inp.mousePressed(0) || this.tankCd > 0) return;
     this.tankCd = 1.3;
     m.barrel.updateWorldMatrix(true, true);
     const mp = new THREE.Vector3();

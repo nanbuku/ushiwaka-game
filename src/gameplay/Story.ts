@@ -223,7 +223,9 @@ export class Story {
     if (!this.active) {
       if (this.done) return;
       this.wait -= dt;
-      if (this.wait <= 0 && g.heat.level === 0 && !g.dialogue.active && !g.capture.active && !g.player.dead) this.beginChapter();
+      const v = g.player.driving;
+      const flying = !!v && v.pos.y > g.world.groundHeight(v.pos.x, v.pos.z) + 2;
+      if (this.wait <= 0 && g.heat.level === 0 && !g.dialogue.active && !g.capture.active && !g.player.dead && !flying) this.beginChapter();
       return;
     }
     const s = this.cur;

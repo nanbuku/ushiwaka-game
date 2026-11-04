@@ -107,7 +107,7 @@ export class AirForce {
     // フレア
     this.flareCd -= dt;
     const inp = g.input;
-    if (air && inp.active && !g.dialogue.active && (inp.pressed('KeyX') || (air.kind === 'jet' && inp.pressed('Space'))) && this.flareCd <= 0) this.dropFlares(air.pos);
+    if (air && inp.active && !g.dialogue.busy && (inp.pressed('KeyX') || (air.kind === 'jet' && inp.pressed('Space'))) && this.flareCd <= 0) this.dropFlares(air.pos);
     for (let i = this.flares.length - 1; i >= 0; i--) {
       const f = this.flares[i];
       f.t += dt;

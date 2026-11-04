@@ -65,6 +65,14 @@ export class Dialogue {
     this.textEl.textContent = line.slice(0, Math.floor(this.typed));
   }
 
+  /** 会話が終わった直後の猶予（この間はクリックで攻撃しない） */
+  private after = 0;
+
+  /** 会話中か、終わった直後 */
+  get busy() {
+    return this.active || this.after > 0;
+  }
+
   advance() {
     if (!this.cur) return;
     const line = this.cur.lines[this.idx] ?? '';
@@ -80,6 +88,7 @@ export class Dialogue {
       const done = this.cur.onDone;
       this.cur = null;
       this.active = false;
+      this.after = 0.45;
       this.box.classList.add('hidden');
       done?.();
       const next = this.pending.shift();
@@ -90,13 +99,20 @@ export class Dialogue {
   }
 
   update(dt: number) {
-    if (!this.active || !this.cur) return;
+    if (!this.active || !this.cur) {
+      this.after -= dt;
+      return;
+    }
     const line = this.cur.lines[this.idx] ?? '';
     if (this.typed < line.length) {
       this.typed = Math.min(line.length, this.typed + dt * 34);
       this.render();
     }
     const inp = this.game.input;
-    if (this.game.frame !== this.openedAt && (inp.pressed('KeyE') || inp.pressed('Space') || inp.pressed('Enter') || inp.mousePressed(0))) this.advance();
+    if (this.game.frame !== this.openedAt && (inp.pressed('KeyE') || inp.pressed('Space') || inp.pressed('Enter') || inp.mousePressed(0))) {
+      this.advance();
+      // 会話を進めた入力で、攻撃（ミサイルの暴発など）やジャンプが起きないように使い切る
+      inp.swallow();
+    }
   }
 }

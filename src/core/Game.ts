@@ -225,7 +225,8 @@ export class Game {
   }
 
   /** 爆発（爆弾） */
-  explode(pos: THREE.Vector3, byPlayer: boolean, scale = 1) {
+  /** 爆発。sparePlayer = true なら、うしわか自身は傷つかない（撃った直後の自爆を防ぐ） */
+  explode(pos: THREE.Vector3, byPlayer: boolean, scale = 1, sparePlayer = false) {
     const gy = this.world.groundHeight(pos.x, pos.z);
     this.fx.explosion(pos, gy, scale);
     this.audio.play('boom', pos, Math.min(1, 0.6 + scale * 0.4));
@@ -262,7 +263,7 @@ export class Game {
       v.blast(dir.multiplyScalar((10 - (d / R) * 5) * scale).add(new THREE.Vector3(0, (12 - (d / R) * 6) * scale, 0)));
     }
     const dp = this.player.pos.distanceTo(pos);
-    if (dp < R * 1.1 && !this.player.driving) {
+    if (dp < R * 1.1 && !this.player.driving && !sparePlayer) {
       this.player.hurt((75 - (dp / R) * 60) * Math.min(1.3, scale), pos);
       this.player.vel.add(this.player.pos.clone().sub(pos).setY(0).normalize().multiplyScalar(9).setY(7));
     }

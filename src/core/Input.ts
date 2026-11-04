@@ -6,6 +6,9 @@ export class Input {
   private buttons = new Set<number>();
   private pressedB = new Set<number>();
   private releasedB = new Set<number>();
+  /** 会話を進めるのに使ったボタン・キー（離すまでほかの操作に使わない） */
+  private swallowB = new Set<number>();
+  private swallowK = new Set<string>();
   mouseDX = 0;
   mouseDY = 0;
   wheel = 0;
@@ -73,7 +76,7 @@ export class Input {
   }
 
   down(code: string) {
-    return this.keys.has(code);
+    return this.keys.has(code) && !this.swallowK.has(code);
   }
   pressed(code: string) {
     return this.pressedK.has(code);
@@ -82,7 +85,7 @@ export class Input {
     return this.releasedK.has(code);
   }
   mouseDown(b: number) {
-    return this.buttons.has(b);
+    return this.buttons.has(b) && !this.swallowB.has(b);
   }
   mousePressed(b: number) {
     return this.pressedB.has(b);
@@ -111,7 +114,20 @@ export class Input {
     }
   }
 
+  /**
+   * このフレームの入力を使い切る（会話を進めたクリックやキーで、攻撃・ジャンプ・話しかけが
+   * 同時に起きないように）。押したままのボタンとキーも、いったん離すまで無視する。
+   */
+  swallow() {
+    this.pressedK.clear();
+    this.pressedB.clear();
+    for (const b of this.buttons) this.swallowB.add(b);
+    for (const k of this.keys) this.swallowK.add(k);
+  }
+
   endFrame() {
+    for (const b of this.swallowB) if (!this.buttons.has(b)) this.swallowB.delete(b);
+    for (const k of this.swallowK) if (!this.keys.has(k)) this.swallowK.delete(k);
     this.pressedK.clear();
     this.releasedK.clear();
     this.pressedB.clear();
